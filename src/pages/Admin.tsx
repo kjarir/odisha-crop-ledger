@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Users, 
   Package, 
@@ -25,67 +26,124 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 export const Admin = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalBatches: 0,
+    totalTransactions: 0,
+    averageQuality: 0,
+    monthlyGrowth: 0,
+    activeUsers: 0
+  });
+  const [recentUsers, setRecentUsers] = useState<any[]>([]);
+  const [recentBatches, setRecentBatches] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data
-  const stats = {
-    totalUsers: 1247,
-    totalBatches: 3456,
-    totalTransactions: 8921,
-    averageQuality: 87,
-    monthlyGrowth: 12.5,
-    activeUsers: 892
+  useEffect(() => {
+    fetchAdminData();
+  }, []);
+
+  const fetchAdminData = async () => {
+    try {
+      // Fetch users
+      const { data: users } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      // Fetch batches
+      const { data: batches } = await supabase
+        .from('batches')
+        .select(`
+          *,
+          profiles:farmer_id (full_name)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      // Fetch transactions
+      const { data: transactions } = await supabase
+        .from('transactions')
+        .select('*');
+
+      // Fetch audit logs
+      const { data: logs } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (users) {
+        setRecentUsers(users);
+        const totalUsers = users.length;
+        const verifiedUsers = users.filter(u => u.is_verified).length;
+        
+        setStats(prev => ({ 
+          ...prev, 
+          totalUsers,
+          activeUsers: verifiedUsers
+        }));
+      }
+
+      if (batches) {
+        setRecentBatches(batches);
+        const avgQuality = batches.length > 0 
+          ? Math.round(batches.reduce((sum, batch) => sum + (batch.quality_score || 0), 0) / batches.length)
+          : 0;
+        
+        setStats(prev => ({ 
+          ...prev, 
+          totalBatches: batches.length,
+          averageQuality: avgQuality
+        }));
+      }
+
+      if (transactions) {
+        setStats(prev => ({ 
+          ...prev, 
+          totalTransactions: transactions.length
+        }));
+      }
+
+      if (logs) {
+        setAuditLogs(logs);
+      }
+    } catch (error) {
+      console.error('Error fetching admin data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const recentUsers = [
-    { id: 1, name: 'Rajesh Kumar', role: 'farmer', status: 'pending', joinDate: '2024-01-20' },
-    { id: 2, name: 'Priya Sharma', role: 'retailer', status: 'verified', joinDate: '2024-01-19' },
-    { id: 3, name: 'Amit Patel', role: 'helper', status: 'pending', joinDate: '2024-01-18' },
-    { id: 4, name: 'Sunita Devi', role: 'farmer', status: 'verified', joinDate: '2024-01-17' }
-  ];
-
-  const recentBatches = [
-    { id: 'BAT-001', farmer: 'Rajesh Kumar', crop: 'Rice', quality: 92, status: 'available' },
-    { id: 'BAT-002', farmer: 'Sunita Devi', crop: 'Wheat', quality: 88, status: 'sold' },
-    { id: 'BAT-003', farmer: 'Mohan Singh', crop: 'Maize', quality: 85, status: 'available' },
-    { id: 'BAT-004', farmer: 'Radha Krishna', crop: 'Rice', quality: 94, status: 'transferred' }
-  ];
-
-  const auditLogs = [
-    { id: 1, action: 'User Verification', user: 'Priya Sharma', timestamp: '2024-01-20 10:30', status: 'completed' },
-    { id: 2, action: 'Batch Registration', user: 'Rajesh Kumar', timestamp: '2024-01-20 09:15', status: 'completed' },
-    { id: 3, action: 'Role Assignment', user: 'Admin', timestamp: '2024-01-20 08:45', status: 'completed' },
-    { id: 4, action: 'Policy Update', user: 'System', timestamp: '2024-01-19 16:20', status: 'completed' }
-  ];
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+          <p className="mt-4 text-muted-foreground">Loading admin dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-hero py-8">
+    <div className="min-h-screen bg-white py-8">
       <div className="container mx-auto px-4 max-w-7xl">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Admin Dashboard</h1>
-          <p className="text-white/80">Government of Odisha - AgriTrace Platform Management</p>
+          <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
+          <p className="text-muted-foreground">Government of Odisha - AgriTrace Platform Management</p>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-1">
-            <TabsList className="grid w-full grid-cols-6 bg-transparent">
-              <TabsTrigger value="overview" className="text-white data-[state=active]:bg-white data-[state=active]:text-primary">
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="users" className="text-white data-[state=active]:bg-white data-[state=active]:text-primary">
-                Users
-              </TabsTrigger>
-              <TabsTrigger value="batches" className="text-white data-[state=active]:bg-white data-[state=active]:text-primary">
-                Batches
-              </TabsTrigger>
-              <TabsTrigger value="analytics" className="text-white data-[state=active]:bg-white data-[state=active]:text-primary">
-                Analytics
-              </TabsTrigger>
-              <TabsTrigger value="audit" className="text-white data-[state=active]:bg-white data-[state=active]:text-primary">
-                Audit Logs
-              </TabsTrigger>
-              <TabsTrigger value="settings" className="text-white data-[state=active]:bg-white data-[state=active]:text-primary">
-                Settings
-              </TabsTrigger>
+          <div className="bg-muted rounded-lg p-1">
+            <TabsList className="grid w-full grid-cols-6">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="users">Users</TabsTrigger>
+              <TabsTrigger value="batches">Batches</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              <TabsTrigger value="audit">Audit Logs</TabsTrigger>
+              <TabsTrigger value="settings">Settings</TabsTrigger>
             </TabsList>
           </div>
 

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
   User, 
   MapPin, 
@@ -22,33 +24,46 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 
 export const Profile = () => {
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
-  
-  // Mock user data
-  const user = {
-    id: 'user-123',
-    fullName: 'Rajesh Kumar',
-    email: 'rajesh.kumar@email.com',
-    phone: '+91 98765 43210',
-    role: 'farmer',
-    farmLocation: 'Cuttack, Odisha',
-    walletAddress: '0x742d35Cc6634C0532925a3b8D4Cc9Bf4fcfB5311',
-    avatarUrl: '/placeholder.svg',
-    isVerified: true,
-    reputationScore: 85,
-    joinedDate: '2024-01-15',
-    totalBatches: 12,
-    totalSales: 28500,
-    averageRating: 4.8,
-    badges: [
-      { name: 'Verified Farmer', icon: Shield, color: 'text-green-600' },
-      { name: 'Quality Producer', icon: Star, color: 'text-yellow-600' },
-      { name: 'Top Seller', icon: Award, color: 'text-blue-600' }
-    ]
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user) {
+      fetchProfile();
+    }
+  }, [user]);
+
+  const fetchProfile = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (error) throw error;
+      setProfile(data);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+  
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">Profile not found</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-hero py-8">
+    <div className="min-h-screen bg-white py-8">
       <div className="container mx-auto px-4 max-w-4xl">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Profile Overview */}

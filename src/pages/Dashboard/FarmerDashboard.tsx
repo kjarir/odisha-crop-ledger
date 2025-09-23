@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,45 +21,62 @@ import {
 import { Link } from 'react-router-dom';
 
 export const FarmerDashboard = () => {
-  const [stats] = useState({
-    totalBatches: 24,
-    activeBatches: 8,
-    totalRevenue: 45680,
-    avgQualityScore: 92
+  const { user } = useAuth();
+  const [stats, setStats] = useState({
+    totalBatches: 0,
+    activeBatches: 0,
+    totalRevenue: 0,
+    avgQualityScore: 0
   });
+  const [recentBatches, setRecentBatches] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const recentBatches = [
-    {
-      id: 'BT-2024-001',
-      crop: 'Basmati Rice',
-      variety: 'Pusa Basmati 1121',
-      quantity: '500 kg',
-      status: 'Active',
-      qualityScore: 94,
-      harvestDate: '2024-01-15',
-      price: 2400
-    },
-    {
-      id: 'BT-2024-002',
-      crop: 'Turmeric',
-      variety: 'Salem Turmeric',
-      quantity: '200 kg',
-      status: 'Sold',
-      qualityScore: 89,
-      harvestDate: '2024-01-10',
-      price: 1800
-    },
-    {
-      id: 'BT-2024-003',
-      crop: 'Black Gram',
-      variety: 'Pant U-19',
-      quantity: '300 kg',
-      status: 'Processing',
-      qualityScore: 91,
-      harvestDate: '2024-01-12',
-      price: 3200
+  useEffect(() => {
+    if (user) {
+      fetchDashboardData();
     }
-  ];
+  }, [user]);
+
+  const fetchDashboardData = async () => {
+    try {
+      // Get farmer profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (profile) {
+        // Fetch batches for this farmer
+        const { data: batches } = await supabase
+          .from('batches')
+          .select('*')
+          .eq('farmer_id', profile.id);
+
+        if (batches) {
+          const totalBatches = batches.length;
+          const activeBatches = batches.filter(b => b.status === 'available').length;
+          const totalRevenue = batches.reduce((sum, batch) => sum + (batch.total_price || 0), 0);
+          const avgQualityScore = batches.length > 0 
+            ? Math.round(batches.reduce((sum, batch) => sum + (batch.quality_score || 0), 0) / batches.length)
+            : 0;
+
+          setStats({
+            totalBatches,
+            activeBatches,
+            totalRevenue,
+            avgQualityScore
+          });
+
+          setRecentBatches(batches.slice(-3).reverse());
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -72,8 +91,20 @@ export const FarmerDashboard = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+          <p className="mt-4 text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container py-8 space-y-8">
+    <div className="min-h-screen bg-white py-8">
+      <div className="container space-y-8">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -172,7 +203,14 @@ export const FarmerDashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {recentBatches.map((batch) => (
+            {recentBatches.length === 0 ? (
+              <div className="text-center py-8">
+                <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No batches yet</h3>
+                <p className="text-muted-foreground">Start by registering your first batch.</p>
+              </div>
+            ) : (
+              recentBatches.map((batch) => (
               <div
                 key={batch.id}
                 className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-smooth"
@@ -181,22 +219,22 @@ export const FarmerDashboard = () => {
                   <div className="flex items-center justify-center w-10 h-10 rounded-lg gradient-primary">
                     <Package className="h-5 w-5 text-primary-foreground" />
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">{batch.crop}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {batch.id}
-                      </Badge>
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">{batch.crop_type}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {batch.id.substring(0, 8)}...
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{batch.variety}</p>
+                      <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                        <span>{batch.harvest_quantity} kg</span>
+                        <span className="flex items-center">
+                          <Calendar className="h-3 w-3 mr-1" />
+                          {new Date(batch.harvest_date).toLocaleDateString()}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground">{batch.variety}</p>
-                    <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                      <span>{batch.quantity}</span>
-                      <span className="flex items-center">
-                        <Calendar className="h-3 w-3 mr-1" />
-                        {new Date(batch.harvestDate).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="flex items-center justify-between md:justify-end space-x-4 mt-4 md:mt-0">
@@ -207,10 +245,10 @@ export const FarmerDashboard = () => {
                       </Badge>
                     </div>
                     <div className="text-sm text-muted-foreground mt-1">
-                      Quality: <span className="font-medium text-success">{batch.qualityScore}%</span>
+                      Quality: <span className="font-medium text-success">{batch.quality_score || 0}/100</span>
                     </div>
                     <div className="text-sm font-medium">
-                      ₹{batch.price}/kg
+                      ₹{batch.price_per_kg}/kg
                     </div>
                   </div>
 
@@ -227,7 +265,8 @@ export const FarmerDashboard = () => {
                   </div>
                 </div>
               </div>
-            ))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
@@ -275,6 +314,7 @@ export const FarmerDashboard = () => {
             </CardContent>
           </Card>
         </Link>
+      </div>
       </div>
     </div>
   );

@@ -31,31 +31,28 @@ export const TrackProducts = () => {
     
     setLoading(true);
     try {
-      // Show demo data for now until database is properly configured
-      const demoData = {
-        id: batchId,
-        crop_type: 'Rice',
-        variety: 'Basmati',
-        grading: 'Premium',
-        harvest_quantity: 500,
-        sowing_date: '2024-01-15',
-        harvest_date: '2024-05-10',
-        quality_score: 95,
-        status: 'available',
-        certification: 'Organic'
-      };
-      
-      setBatch(demoData);
-      toast({
-        title: "Demo data loaded",
-        description: "Showing sample batch information for demonstration.",
-      });
+      const { data, error } = await supabase
+        .from('batches')
+        .select('*')
+        .eq('id', batchId)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setBatch(data);
+        toast({
+          title: "Batch found",
+          description: "Batch information loaded successfully.",
+        });
+      }
     } catch (error) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "An error occurred while searching for the batch.",
+        title: "Batch not found",
+        description: "No batch found with this ID. Please check and try again.",
       });
+      setBatch(null);
     } finally {
       setLoading(false);
     }
@@ -72,7 +69,7 @@ export const TrackProducts = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background py-12">
+    <div className="min-h-screen bg-white py-12">
       <div className="container mx-auto px-4 max-w-4xl">
         {/* Header */}
         <div className="text-center mb-8">

@@ -16,7 +16,8 @@ import {
 
 const Index = () => {
   return (
-    <div className="container py-16 space-y-16">
+    <div className="min-h-screen bg-white py-16">
+      <div className="container space-y-16">
       {/* About Header */}
       <div className="text-center space-y-6">
         <Badge variant="outline" className="mb-4">
@@ -204,6 +205,7 @@ const Index = () => {
           </p>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 };
