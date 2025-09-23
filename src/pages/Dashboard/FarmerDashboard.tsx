@@ -40,7 +40,7 @@ export const FarmerDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       // Get farmer profile
-      const { data: profile } = await supabase
+      const { data: profile } = await (supabase as any)
         .from('profiles')
         .select('id')
         .eq('user_id', user?.id)
@@ -48,17 +48,17 @@ export const FarmerDashboard = () => {
 
       if (profile) {
         // Fetch batches for this farmer
-        const { data: batches } = await supabase
+        const { data: batches } = await (supabase as any)
           .from('batches')
           .select('*')
           .eq('farmer_id', profile.id);
 
         if (batches) {
           const totalBatches = batches.length;
-          const activeBatches = batches.filter(b => b.status === 'available').length;
-          const totalRevenue = batches.reduce((sum, batch) => sum + (batch.total_price || 0), 0);
+          const activeBatches = batches.filter((b: any) => b.status === 'available').length;
+          const totalRevenue = batches.reduce((sum: number, batch: any) => sum + (batch.total_price || 0), 0);
           const avgQualityScore = batches.length > 0 
-            ? Math.round(batches.reduce((sum, batch) => sum + (batch.quality_score || 0), 0) / batches.length)
+            ? Math.round(batches.reduce((sum: number, batch: any) => sum + (batch.quality_score || 0), 0) / batches.length)
             : 0;
 
           setStats({

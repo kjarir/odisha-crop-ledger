@@ -31,7 +31,7 @@ export const Marketplace = () => {
 
   const fetchBatches = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('batches')
         .select(`
           *,

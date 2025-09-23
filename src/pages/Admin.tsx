@@ -46,14 +46,14 @@ export const Admin = () => {
   const fetchAdminData = async () => {
     try {
       // Fetch users
-      const { data: users } = await supabase
+      const { data: users } = await (supabase as any)
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(10);
 
       // Fetch batches
-      const { data: batches } = await supabase
+      const { data: batches } = await (supabase as any)
         .from('batches')
         .select(`
           *,
@@ -63,12 +63,12 @@ export const Admin = () => {
         .limit(10);
 
       // Fetch transactions
-      const { data: transactions } = await supabase
+      const { data: transactions } = await (supabase as any)
         .from('transactions')
         .select('*');
 
       // Fetch audit logs
-      const { data: logs } = await supabase
+      const { data: logs } = await (supabase as any)
         .from('audit_logs')
         .select('*')
         .order('created_at', { ascending: false })
@@ -77,7 +77,7 @@ export const Admin = () => {
       if (users) {
         setRecentUsers(users);
         const totalUsers = users.length;
-        const verifiedUsers = users.filter(u => u.is_verified).length;
+        const verifiedUsers = users.filter((u: any) => u.is_verified).length;
         
         setStats(prev => ({ 
           ...prev, 
@@ -88,9 +88,9 @@ export const Admin = () => {
 
       if (batches) {
         setRecentBatches(batches);
-        const avgQuality = batches.length > 0 
-          ? Math.round(batches.reduce((sum, batch) => sum + (batch.quality_score || 0), 0) / batches.length)
-          : 0;
+          const avgQuality = batches.length > 0 
+            ? Math.round(batches.reduce((sum: number, batch: any) => sum + (batch.quality_score || 0), 0) / batches.length)
+            : 0;
         
         setStats(prev => ({ 
           ...prev, 

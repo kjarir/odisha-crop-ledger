@@ -31,7 +31,7 @@ export const TrackProducts = () => {
     
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('batches')
         .select('*')
         .eq('id', batchId)
