@@ -12,6 +12,10 @@ import { Login } from "./pages/Auth/Login";
 import { Signup } from "./pages/Auth/Signup";
 import { FarmerDashboard } from "./pages/Dashboard/FarmerDashboard";
 import { Marketplace } from "./pages/Marketplace";
+import { TrackProducts } from "./pages/TrackProducts";
+import { Profile } from "./pages/Profile";
+import { BatchRegistration } from "./pages/BatchRegistration";
+import { Admin } from "./pages/Admin";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
@@ -32,6 +36,10 @@ const App = () => (
               <Route path="/signup" element={<Signup />} />
               <Route path="/dashboard" element={<FarmerDashboard />} />
               <Route path="/marketplace" element={<Marketplace />} />
+              <Route path="/track" element={<TrackProducts />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/register-batch" element={<BatchRegistration />} />
+              <Route path="/admin" element={<Admin />} />
               <Route path="/about" element={<Index />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

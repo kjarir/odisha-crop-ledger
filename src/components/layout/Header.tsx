@@ -29,14 +29,14 @@ export const Header = () => {
 
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-6">
-          <Link to="/about" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
-            About
-          </Link>
           <Link to="/marketplace" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
             Marketplace
           </Link>
           <Link to="/track" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
-            Track Produce
+            Track Products
+          </Link>
+          <Link to="/about" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
+            About
           </Link>
           <Link to="/dashboard" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
             Dashboard
