@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +24,45 @@ import {
 export const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        toast({
+          variant: "destructive",
+          title: "Login failed",
+          description: error.message,
+        });
+      } else {
+        toast({
+          title: "Login successful",
+          description: "Welcome back to AgriTrace!",
+        });
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: "An unexpected error occurred.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-hero p-4">
@@ -59,50 +100,20 @@ export const Login = () => {
               </TabsList>
 
               <TabsContent value="credentials" className="space-y-4">
-                <div className="flex space-x-2">
-                  <Button
-                    variant={loginMethod === 'email' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setLoginMethod('email')}
-                    className="flex-1"
-                  >
-                    <Mail className="h-4 w-4 mr-2" />
-                    Email
-                  </Button>
-                  <Button
-                    variant={loginMethod === 'phone' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setLoginMethod('phone')}
-                    className="flex-1"
-                  >
-                    <Phone className="h-4 w-4 mr-2" />
-                    Phone
-                  </Button>
-                </div>
-
-                <div className="space-y-4">
+                <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="identifier">
-                      {loginMethod === 'email' ? 'Email Address' : 'Phone Number'}
-                    </Label>
+                    <Label htmlFor="email">Email Address</Label>
                     <div className="relative">
                       <Input
-                        id="identifier"
-                        type={loginMethod === 'email' ? 'email' : 'tel'}
-                        placeholder={
-                          loginMethod === 'email' 
-                            ? 'farmer@example.com' 
-                            : '+91 98765 43210'
-                        }
+                        id="email"
+                        type="email"
+                        placeholder="farmer@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                         className="pl-10"
+                        required
                       />
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                        {loginMethod === 'email' ? (
-                          <Mail className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Phone className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </div>
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>
 
@@ -113,7 +124,10 @@ export const Login = () => {
                         id="password"
                         type={showPassword ? 'text' : 'password'}
                         placeholder="Enter your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                         className="pl-10 pr-10"
+                        required
                       />
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <button
@@ -126,16 +140,15 @@ export const Login = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-sm">
-                    <Link to="/forgot-password" className="text-primary hover:underline">
-                      Forgot password?
-                    </Link>
-                  </div>
-
-                  <Button className="w-full gradient-primary" size="lg">
-                    Sign In
+                  <Button 
+                    type="submit" 
+                    className="w-full gradient-primary" 
+                    size="lg"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Signing In...' : 'Sign In'}
                   </Button>
-                </div>
+                </form>
               </TabsContent>
 
               <TabsContent value="wallet" className="space-y-4">
