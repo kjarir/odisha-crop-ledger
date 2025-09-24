@@ -4,6 +4,7 @@ import { getEnhancedBatchData } from './supplyChainTracker';
 
 /**
  * Update an existing IPFS certificate with new supply chain data
+ * Since IPFS is immutable, we'll create a new version but maintain the same filename
  */
 export const updateExistingIPFSCertificate = async (
   batchId: string,
@@ -19,10 +20,20 @@ export const updateExistingIPFSCertificate = async (
     // Generate updated certificate with current transaction history
     const updatedCertificateBlob = await generatePDFCertificate(enhancedBatchData);
 
-    // Upload the updated certificate to IPFS
+    // Create a new version with the same filename to maintain consistency
     const ipfsService = IPFSService.getInstance();
-    const fileName = `AgriTrace_Certificate_${batchId}_Updated_${Date.now()}.pdf`;
+    const fileName = `AgriTrace_Certificate_${batchId}.pdf`;
     
+    // First, unpin the old file to clean up
+    try {
+      await ipfsService.unpinFile(existingIpfsHash);
+      console.log(`Unpinned old certificate: ${existingIpfsHash}`);
+    } catch (unpinError) {
+      console.warn('Failed to unpin old certificate:', unpinError);
+      // Continue anyway, as the old file will eventually expire
+    }
+    
+    // Upload the updated certificate with the same filename
     const pinataResponse = await ipfsService.uploadFile(
       updatedCertificateBlob,
       fileName,
@@ -32,11 +43,13 @@ export const updateExistingIPFSCertificate = async (
           batchId: batchId,
           type: 'certificate',
           version: 'updated',
+          lastUpdated: new Date().toISOString(),
           originalHash: existingIpfsHash
         }
       }
     );
 
+    console.log(`Updated certificate: ${existingIpfsHash} -> ${pinataResponse.IpfsHash}`);
     return pinataResponse.IpfsHash;
   } catch (error) {
     console.error('Error updating IPFS certificate:', error);

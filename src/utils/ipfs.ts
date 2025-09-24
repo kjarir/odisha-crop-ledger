@@ -224,6 +224,51 @@ export class IPFSService {
       return null;
     }
   }
+
+  /**
+   * Update an existing pinned file by unpinning the old one and pinning the new one
+   */
+  public async updatePinnedFile(
+    oldIpfsHash: string,
+    newFile: File | Blob,
+    fileName: string,
+    metadata?: PinataMetadata
+  ): Promise<PinataResponse> {
+    try {
+      // First, unpin the old file
+      await this.unpinFile(oldIpfsHash);
+      
+      // Then pin the new file
+      const newResponse = await this.uploadFile(newFile, fileName, metadata);
+      
+      return newResponse;
+    } catch (error) {
+      console.error('Error updating pinned file:', error);
+      throw new Error('Failed to update pinned file');
+    }
+  }
+
+  /**
+   * Unpin a file from Pinata
+   */
+  public async unpinFile(ipfsHash: string): Promise<boolean> {
+    try {
+      const response = await axios.delete(
+        `https://api.pinata.cloud/pinning/unpin/${ipfsHash}`,
+        {
+          headers: {
+            'pinata_api_key': this.apiKey,
+            'pinata_secret_api_key': this.apiSecret,
+          },
+        }
+      );
+
+      return response.status === 200;
+    } catch (error) {
+      console.error('Error unpinning file:', error);
+      return false;
+    }
+  }
 }
 
 // Export singleton instance

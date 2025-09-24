@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { SupplyChainTransaction, EnhancedBatchData } from './certificateGenerator';
-import { updateCertificateWithSupplyChain } from './ipfsCertificateUpdater';
+import { updateCertificateWithSupplyChainData } from './dynamicCertificateUpdater';
 
 /**
  * Store a new supply chain transaction
@@ -59,12 +59,12 @@ export const recordSupplyChainTransaction = async (
       throw updateError;
     }
 
-    // Update the IPFS certificate with new transaction data
+    // Update the IPFS certificate data with new transaction data
     try {
-      await updateCertificateWithSupplyChain(batchId);
-      console.log(`Updated IPFS certificate for batch ${batchId} with new transaction`);
+      await updateCertificateWithSupplyChainData(batchId);
+      console.log(`Updated IPFS certificate data for batch ${batchId} with new transaction`);
     } catch (certError) {
-      console.warn('Failed to update IPFS certificate:', certError);
+      console.warn('Failed to update IPFS certificate data:', certError);
       // Don't fail the transaction if certificate update fails
     }
 
@@ -269,14 +269,29 @@ export const getEnhancedBatchData = async (batchId: string): Promise<EnhancedBat
  */
 export const generateUpdatedCertificate = async (batchId: string): Promise<Blob | null> => {
   try {
-    const enhancedBatchData = await getEnhancedBatchData(batchId);
-    if (!enhancedBatchData) {
-      throw new Error('Batch not found');
-    }
+    // First try to get certificate data from IPFS
+    const { supabase } = await import('@/integrations/supabase/client');
+    
+    const { data: batch, error: fetchError } = await (supabase as any)
+      .from('batches')
+      .select('certificate_data_hash, ipfs_certificate_hash, ipfs_hash')
+      .eq('id', batchId)
+      .single();
 
-    // Import the certificate generator
-    const { generatePDFCertificate } = await import('./certificateGenerator');
-    return await generatePDFCertificate(enhancedBatchData);
+    if (!fetchError && batch?.certificate_data_hash) {
+      // Generate from stored certificate data
+      const { generateCertificateFromData } = await import('./dynamicCertificateUpdater');
+      return await generateCertificateFromData(batch.certificate_data_hash);
+    } else {
+      // Fallback to generating from current batch data
+      const enhancedBatchData = await getEnhancedBatchData(batchId);
+      if (!enhancedBatchData) {
+        throw new Error('Batch not found');
+      }
+
+      const { generatePDFCertificate } = await import('./certificateGenerator');
+      return await generatePDFCertificate(enhancedBatchData);
+    }
   } catch (error) {
     console.error('Error generating updated certificate:', error);
     return null;
