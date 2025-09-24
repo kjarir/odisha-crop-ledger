@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
-import { getSupplyChainHistory, getEnhancedBatchData, generateUpdatedCertificate } from '@/utils/supplyChainTracker';
+import { getSupplyChainHistory, getEnhancedBatchData, generateCurrentCertificate } from '@/utils/supplyChainTracker';
 import { SupplyChainTransaction } from '@/utils/certificateGenerator';
 import { 
   History, 
@@ -53,7 +53,7 @@ export const SupplyChainDisplay: React.FC<SupplyChainDisplayProps> = ({ batchId,
   const handleDownloadCertificate = async () => {
     setDownloading(true);
     try {
-      const certificateBlob = await generateUpdatedCertificate(batchId);
+      const certificateBlob = await generateCurrentCertificate(batchId);
       if (certificateBlob) {
         // Create download link
         const url = URL.createObjectURL(certificateBlob);
