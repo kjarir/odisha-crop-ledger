@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Menu, X, Leaf, User, ShoppingCart, Shield, LogIn, LogOut } from 'lucide-react';
+import { Menu, X, Leaf, User, ShoppingCart, Shield, LogIn, LogOut, Wallet } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWeb3 } from '@/contexts/Web3Context';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,7 @@ import {
 export const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { user, signOut } = useAuth();
+  const { isConnected, connectWallet, account, disconnectWallet } = useWeb3();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -43,6 +45,9 @@ export const Header = () => {
           <Link to="/track" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
             Track Products
           </Link>
+          <Link to="/verify" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
+            Verify Certificate
+          </Link>
           <Link to="/about" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
             About
           </Link>
@@ -53,6 +58,29 @@ export const Header = () => {
 
         {/* Desktop Auth & Actions */}
         <div className="hidden md:flex items-center space-x-4">
+          {/* Wallet Connection */}
+          {isConnected ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="border-green-200 text-green-700">
+                  <Wallet className="mr-2 h-4 w-4" />
+                  {account?.substring(0, 6)}...{account?.substring(account.length - 4)}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={disconnectWallet}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Disconnect Wallet
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button variant="outline" size="sm" onClick={connectWallet}>
+              <Wallet className="mr-2 h-4 w-4" />
+              Connect Wallet
+            </Button>
+          )}
+
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -71,7 +99,7 @@ export const Header = () => {
                 <DropdownMenuItem asChild>
                   <Link to="/batch-registration">
                     <ShoppingCart className="mr-2 h-4 w-4" />
-                    My Batches
+                    Register Batch
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -140,6 +168,13 @@ export const Header = () => {
               Track Produce
             </Link>
             <Link
+              to="/verify"
+              className="block text-sm font-medium text-muted-foreground hover:text-primary transition-smooth"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Verify Certificate
+            </Link>
+            <Link
               to="/dashboard"
               className="block text-sm font-medium text-muted-foreground hover:text-primary transition-smooth"
               onClick={() => setIsMenuOpen(false)}
@@ -147,6 +182,19 @@ export const Header = () => {
               Dashboard
             </Link>
             <div className="pt-3 border-t space-y-2">
+              {/* Wallet Connection */}
+              {isConnected ? (
+                <Button variant="outline" size="sm" className="w-full justify-start border-green-200 text-green-700" onClick={disconnectWallet}>
+                  <Wallet className="mr-2 h-4 w-4" />
+                  Disconnect Wallet
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" className="w-full justify-start" onClick={connectWallet}>
+                  <Wallet className="mr-2 h-4 w-4" />
+                  Connect Wallet
+                </Button>
+              )}
+
               {user ? (
                 <>
                   <Button variant="ghost" size="sm" className="w-full justify-start" asChild>

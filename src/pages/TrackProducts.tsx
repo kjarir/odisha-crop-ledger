@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +16,9 @@ import {
   Download,
   Truck,
   Shield,
-  QrCode
+  QrCode,
+  CheckCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { downloadPDFCertificate } from '@/utils/certificateGenerator';
@@ -24,6 +27,7 @@ export const TrackProducts = () => {
   const [batchId, setBatchId] = useState('');
   const [batch, setBatch] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   const handleSearch = async () => {
@@ -31,13 +35,24 @@ export const TrackProducts = () => {
     
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      // First try to search by database ID
+      let { data, error } = await (supabase as any)
         .from('batches')
         .select('*')
         .eq('id', batchId)
         .single();
 
-      if (error) throw error;
+      // If not found, try searching by blockchain_id or blockchain_batch_id
+      if (error || !data) {
+        const { data: blockchainData, error: blockchainError } = await (supabase as any)
+          .from('batches')
+          .select('*')
+          .or(`blockchain_id.eq.${batchId},blockchain_batch_id.eq.${batchId}`)
+          .single();
+        
+        if (blockchainError) throw blockchainError;
+        data = blockchainData;
+      }
 
       if (data) {
         setBatch(data);
@@ -64,6 +79,31 @@ export const TrackProducts = () => {
       toast({
         title: "Certificate Downloaded",
         description: "The certificate has been downloaded successfully.",
+      });
+    }
+  };
+
+  const handleVerifyCertificate = () => {
+    if (batch && (batch.blockchain_id || batch.blockchain_batch_id)) {
+      navigate(`/verify?batchId=${batch.blockchain_id || batch.blockchain_batch_id}`);
+    } else {
+      toast({
+        variant: "destructive",
+        title: "No Blockchain ID",
+        description: "This batch doesn't have a blockchain ID for verification.",
+      });
+    }
+  };
+
+  const handleViewCertificate = () => {
+    const ipfsHash = batch.ipfs_hash || batch.ipfs_certificate_hash;
+    if (ipfsHash) {
+      window.open(`https://gateway.pinata.cloud/ipfs/${ipfsHash}`, '_blank');
+    } else {
+      toast({
+        variant: "destructive",
+        title: "No Certificate",
+        description: "No certificate available for this batch.",
       });
     }
   };
@@ -204,15 +244,38 @@ export const TrackProducts = () => {
                         <span className="font-medium">Certification:</span>
                         <span className="ml-2">{batch.certification || 'Standard'}</span>
                       </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={handleDownloadCertificate}
-                        className="mt-2"
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download Certificate
-                      </Button>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={handleDownloadCertificate}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Certificate
+                        </Button>
+                        
+                        {(batch.blockchain_id || batch.blockchain_batch_id) && (
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={handleVerifyCertificate}
+                          >
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            Verify
+                          </Button>
+                        )}
+                        
+                        {(batch.ipfs_hash || batch.ipfs_certificate_hash) && (
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={handleViewCertificate}
+                          >
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            View Certificate
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

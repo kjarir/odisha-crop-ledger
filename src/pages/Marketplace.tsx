@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/components/ui/use-toast';
+import { BatchDetailsModal } from '@/components/BatchDetailsModal';
+import { SimplePurchaseModal } from '@/components/SimplePurchaseModal';
+import { BatchQuantityDisplay } from '@/components/BatchQuantityDisplay';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { 
   Search, 
   Filter, 
@@ -15,7 +21,9 @@ import {
   ShoppingCart,
   Leaf,
   Package,
-  TrendingUp
+  TrendingUp,
+  CheckCircle,
+  ExternalLink
 } from 'lucide-react';
 
 export const Marketplace = () => {
@@ -24,6 +32,11 @@ export const Marketplace = () => {
   const [selectedLocation, setSelectedLocation] = useState('all');
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedBatch, setSelectedBatch] = useState<any>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchBatches();
@@ -68,6 +81,48 @@ export const Marketplace = () => {
     return status === 'Available' 
       ? 'bg-success text-success-foreground' 
       : 'bg-warning text-warning-foreground';
+  };
+
+  const handleViewDetails = (batch: any) => {
+    setSelectedBatch(batch);
+    setIsDetailsModalOpen(true);
+  };
+
+  const handleBuyNow = (batch: any) => {
+    setSelectedBatch(batch);
+    setIsPurchaseModalOpen(true);
+  };
+
+  const handlePurchaseComplete = () => {
+    // Refresh the batches list to update availability
+    fetchBatches();
+    setIsPurchaseModalOpen(false);
+    setSelectedBatch(null);
+  };
+
+  const handleVerifyCertificate = (batch: any) => {
+    if (batch.blockchain_id || batch.blockchain_batch_id) {
+      navigate(`/verify?batchId=${batch.blockchain_id || batch.blockchain_batch_id}`);
+    } else {
+      toast({
+        variant: "destructive",
+        title: "No Blockchain ID",
+        description: "This batch doesn't have a blockchain ID for verification.",
+      });
+    }
+  };
+
+  const handleViewCertificate = (batch: any) => {
+    const ipfsHash = batch.ipfs_hash || batch.ipfs_certificate_hash;
+    if (ipfsHash) {
+      window.open(`https://gateway.pinata.cloud/ipfs/${ipfsHash}`, '_blank');
+    } else {
+      toast({
+        variant: "destructive",
+        title: "No Certificate",
+        description: "No certificate available for this batch.",
+      });
+    }
   };
 
   if (loading) {
@@ -233,7 +288,11 @@ export const Marketplace = () => {
                       <div className="text-sm text-muted-foreground">per kg</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-medium">{batch.harvest_quantity} kg</div>
+                      <BatchQuantityDisplay 
+                        batchId={batch.id} 
+                        originalQuantity={batch.harvest_quantity}
+                        className="mb-2"
+                      />
                       <Badge className={getStatusColor(batch.status)}>
                         {batch.status}
                       </Badge>
@@ -242,7 +301,12 @@ export const Marketplace = () => {
 
                   {/* Actions */}
                   <div className="flex space-x-2">
-                    <Button variant="outline" size="sm" className="flex-1">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => handleViewDetails(batch)}
+                    >
                       <Eye className="h-4 w-4 mr-2" />
                       View Details
                     </Button>
@@ -250,15 +314,45 @@ export const Marketplace = () => {
                       size="sm" 
                       className="flex-1 gradient-primary"
                       disabled={batch.status !== 'available'}
+                      onClick={() => handleBuyNow(batch)}
                     >
                       <ShoppingCart className="h-4 w-4 mr-2" />
                       {batch.status === 'available' ? 'Buy Now' : 'Reserved'}
                     </Button>
                   </div>
 
+                  {/* Verification Actions */}
+                  <div className="flex space-x-2 mt-2">
+                    {(batch.blockchain_id || batch.blockchain_batch_id) && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => handleVerifyCertificate(batch)}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Verify
+                      </Button>
+                    )}
+                    {(batch.ipfs_hash || batch.ipfs_certificate_hash) && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => handleViewCertificate(batch)}
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Certificate
+                      </Button>
+                    )}
+                  </div>
+
                   {/* Batch ID */}
                   <div className="text-xs text-muted-foreground font-mono">
-                    ID: {batch.id.substring(0, 8)}...
+                    ID: {(batch.blockchain_id || batch.blockchain_batch_id) ? 
+                      `${batch.blockchain_id || batch.blockchain_batch_id}` : 
+                      batch.id.substring(0, 8) + '...'
+                    }
                   </div>
                 </CardContent>
               </Card>
@@ -274,6 +368,30 @@ export const Marketplace = () => {
           </Button>
         </div>
       </div>
+
+      {/* Batch Details Modal */}
+      <BatchDetailsModal
+        batch={selectedBatch}
+        isOpen={isDetailsModalOpen}
+        onClose={() => {
+          setIsDetailsModalOpen(false);
+          setSelectedBatch(null);
+        }}
+        onBuyNow={handleBuyNow}
+      />
+
+      {/* Purchase Modal */}
+      <ErrorBoundary>
+        <SimplePurchaseModal
+          batch={selectedBatch}
+          isOpen={isPurchaseModalOpen}
+          onClose={() => {
+            setIsPurchaseModalOpen(false);
+            setSelectedBatch(null);
+          }}
+          onPurchaseComplete={handlePurchaseComplete}
+        />
+      </ErrorBoundary>
     </div>
   );
 };

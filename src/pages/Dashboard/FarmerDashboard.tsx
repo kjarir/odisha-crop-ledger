@@ -19,6 +19,7 @@ import {
   ArrowUpRight
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BatchList } from '@/components/BatchList';
 
 export const FarmerDashboard = () => {
   const { user } = useAuth();
@@ -273,7 +274,7 @@ export const FarmerDashboard = () => {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Link to="/register-batch">
+        <Link to="/batch-registration">
           <Card className="govt-card hover-lift cursor-pointer">
             <CardContent className="p-6 text-center">
               <div className="flex items-center justify-center w-12 h-12 rounded-lg gradient-primary mx-auto mb-4">
@@ -281,7 +282,7 @@ export const FarmerDashboard = () => {
               </div>
               <h3 className="font-semibold mb-2">Register New Batch</h3>
               <p className="text-sm text-muted-foreground">
-                Add a new harvest batch with AI quality analysis
+                Add a new harvest batch with blockchain registration
               </p>
             </CardContent>
           </Card>
@@ -314,6 +315,11 @@ export const FarmerDashboard = () => {
             </CardContent>
           </Card>
         </Link>
+      </div>
+
+      {/* Batch List */}
+      <div className="mt-8">
+        <BatchList />
       </div>
       </div>
     </div>
