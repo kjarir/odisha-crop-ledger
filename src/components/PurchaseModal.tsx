@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWeb3 } from '@/contexts/Web3Context';
 import { supabase } from '@/integrations/supabase/client';
+import { createPurchaseTransaction } from '@/utils/supplyChainTracker';
 // Removed complex database queries to avoid errors
 import { 
   ShoppingCart, 
@@ -95,13 +96,22 @@ export const PurchaseModal: React.FC<PurchaseModalProps> = ({
     setLoading(true);
 
     try {
-      // Simple approach: Just update the batch with purchase info in grading field
-      const purchaseInfo = `| Purchase: ${user.email || 'Unknown'} bought ${quantity}kg for ₹${finalTotal} on ${new Date().toLocaleDateString()}`;
+      // Use the new supply chain tracking system
+      const currentOwner = batch.farmer || batch.current_owner || 'Unknown Farmer';
+      const buyerName = user.email || user.name || 'Unknown Buyer';
       
+      await createPurchaseTransaction(
+        batch.id,
+        currentOwner,
+        buyerName,
+        quantity,
+        unitPrice,
+        deliveryAddress
+      );
+
+      // Update batch status
       const purchaseData = {
-        grading: `${batch.grading}${purchaseInfo}`,
-        // Keep status as available for now
-        status: 'available'
+        status: 'available' // Keep available for other purchases
       };
 
       // Update the batch with purchase information
@@ -116,15 +126,13 @@ export const PurchaseModal: React.FC<PurchaseModalProps> = ({
         throw new Error(`Failed to update batch: ${purchaseError.message}`);
       }
 
-      // No need for additional update since we already updated the status above
-
       // Simulate payment processing
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       setStep('complete');
       toast({
         title: "Purchase successful!",
-        description: `Your order for ${quantity}kg ${batch.crop_type} has been placed.`,
+        description: `Your order for ${quantity}kg ${batch.crop_type} has been placed. The certificate has been updated with your purchase details.`,
       });
 
       onPurchaseComplete();

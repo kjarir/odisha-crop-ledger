@@ -101,7 +101,7 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
     { label: 'Current Available Quantity', value: `${batchData.currentQuantity || batchData.harvestQuantity || 'N/A'} kg` },
     { label: 'Sowing Date', value: batchData.sowingDate ? new Date(batchData.sowingDate).toLocaleDateString('en-IN') : 'N/A' },
     { label: 'Harvest Date', value: batchData.harvestDate ? new Date(batchData.harvestDate).toLocaleDateString('en-IN') : 'N/A' },
-    { label: 'Quality Grade', value: batchData.grading || 'Standard' },
+    { label: 'Quality Grade', value: batchData.grading ? batchData.grading.split('|')[0].trim() : 'Standard' },
     { label: 'Certification Level', value: batchData.certification || 'Standard' },
     { label: 'Freshness Duration', value: `${batchData.freshnessDuration || 'N/A'} days` },
     { label: 'Current Market Price', value: batchData.price ? `₹${(batchData.price / 100).toFixed(2)} per kg` : 'N/A' },
