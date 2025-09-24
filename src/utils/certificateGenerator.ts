@@ -27,81 +27,121 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   
-  // Colors
-  const primaryColor = [45, 90, 45]; // Dark green
-  const secondaryColor = [100, 150, 100]; // Light green
-  const textColor = [50, 50, 50]; // Dark gray
+  // Government-style colors
+  const primaryColor = [0, 51, 102]; // Deep blue
+  const accentColor = [255, 215, 0]; // Gold
+  const textColor = [0, 0, 0]; // Black
+  const lightGray = [240, 240, 240]; // Light gray for backgrounds
   
-  // Header
-  doc.setFillColor(...primaryColor);
-  doc.rect(0, 0, pageWidth, 40, 'F');
+  // Background pattern (subtle)
+  doc.setFillColor(...lightGray);
+  doc.rect(0, 0, pageWidth, pageHeight, 'F');
   
-  // Logo and title
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(24);
-  doc.setFont('helvetica', 'bold');
-  doc.text('🌿 AgriTrace', pageWidth / 2, 15, { align: 'center' });
-  
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Government of Odisha', pageWidth / 2, 25, { align: 'center' });
-  
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Certificate of Agricultural Traceability', pageWidth / 2, 35, { align: 'center' });
-  
-  // Certificate border
+  // Ornamental border
   doc.setDrawColor(...primaryColor);
-  doc.setLineWidth(2);
-  doc.rect(15, 50, pageWidth - 30, pageHeight - 100);
+  doc.setLineWidth(3);
+  doc.rect(10, 10, pageWidth - 20, pageHeight - 20);
   
-  // Content
-  doc.setTextColor(...textColor);
+  // Inner decorative border
+  doc.setLineWidth(1);
+  doc.rect(15, 15, pageWidth - 30, pageHeight - 30);
+  
+  // Header section with government seal area
+  doc.setFillColor(...primaryColor);
+  doc.rect(20, 20, pageWidth - 40, 50, 'F');
+  
+  // Government emblem area (circular)
+  doc.setFillColor(...accentColor);
+  doc.circle(pageWidth / 2, 45, 15, 'F');
+  
+  // Emblem text
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('GOVT', pageWidth / 2, 42, { align: 'center' });
+  doc.text('OF', pageWidth / 2, 45, { align: 'center' });
+  doc.text('ODISHA', pageWidth / 2, 48, { align: 'center' });
+  
+  // Main title
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(18);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CERTIFICATE OF AGRICULTURAL TRACEABILITY', pageWidth / 2, 25, { align: 'center' });
+  
+  // Subtitle
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
+  doc.text('Government of Odisha - Department of Agriculture & Farmers Empowerment', pageWidth / 2, 32, { align: 'center' });
   
-  let yPosition = 70;
-  const lineHeight = 8;
+  // Certificate number and date
+  doc.setTextColor(...textColor);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Certificate No: ATC-${batchData.id}-${new Date().getFullYear()}`, 30, 80);
+  doc.text(`Date of Issue: ${new Date().toLocaleDateString('en-IN')}`, pageWidth - 30, 80, { align: 'right' });
   
-  // Basic batch information
-  const fields = [
-    { label: 'Batch ID', value: batchData.id ? batchData.id.toString() : 'N/A' },
-    { label: 'Crop Type', value: batchData.crop || 'N/A' },
-    { label: 'Variety', value: batchData.variety || 'N/A' },
+  // Certificate body
+  let yPosition = 90;
+  const lineHeight = 6;
+  
+  // Official declaration
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('This is to certify that:', 30, yPosition);
+  yPosition += 15;
+  
+  // Product information in a formal table format
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  
+  const productInfo = [
+    { label: 'Product Name', value: `${batchData.crop || 'N/A'} - ${batchData.variety || 'N/A'}` },
+    { label: 'Batch Identification Number', value: `ATC-${batchData.id}-${new Date().getFullYear()}` },
     { label: 'Original Harvest Quantity', value: `${batchData.originalQuantity || batchData.harvestQuantity || 'N/A'} kg` },
     { label: 'Current Available Quantity', value: `${batchData.currentQuantity || batchData.harvestQuantity || 'N/A'} kg` },
-    { label: 'Sowing Date', value: batchData.sowingDate ? new Date(batchData.sowingDate).toLocaleDateString() : 'N/A' },
-    { label: 'Harvest Date', value: batchData.harvestDate ? new Date(batchData.harvestDate).toLocaleDateString() : 'N/A' },
+    { label: 'Sowing Date', value: batchData.sowingDate ? new Date(batchData.sowingDate).toLocaleDateString('en-IN') : 'N/A' },
+    { label: 'Harvest Date', value: batchData.harvestDate ? new Date(batchData.harvestDate).toLocaleDateString('en-IN') : 'N/A' },
+    { label: 'Quality Grade', value: batchData.grading || 'Standard' },
+    { label: 'Certification Level', value: batchData.certification || 'Standard' },
     { label: 'Freshness Duration', value: `${batchData.freshnessDuration || 'N/A'} days` },
-    { label: 'Grading', value: batchData.grading || 'N/A' },
-    { label: 'Certification', value: batchData.certification || 'Standard' },
-    { label: 'Current Market Price', value: batchData.price ? `₹${(batchData.price / 100).toFixed(2)}` : 'N/A' },
-    { label: 'Current Owner', value: batchData.currentOwner ? `${batchData.currentOwner.substring(0, 6)}...${batchData.currentOwner.substring(batchData.currentOwner.length - 4)}` : 'N/A' },
-    { label: 'Blockchain Hash', value: batchData.ipfsHash || 'N/A' },
+    { label: 'Current Market Price', value: batchData.price ? `₹${(batchData.price / 100).toFixed(2)} per kg` : 'N/A' },
+    { label: 'Current Owner', value: batchData.currentOwner || 'N/A' },
+    { label: 'Blockchain Verification Hash', value: batchData.ipfsHash ? `${batchData.ipfsHash.substring(0, 20)}...` : 'N/A' },
   ];
   
-  fields.forEach((field, index) => {
-    if (yPosition > pageHeight - 60) {
+  // Create a formal table layout
+  productInfo.forEach((field, index) => {
+    if (yPosition > pageHeight - 80) {
       doc.addPage();
       yPosition = 30;
     }
     
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${field.label}:`, 25, yPosition);
+    // Draw table row background
+    if (index % 2 === 0) {
+      doc.setFillColor(250, 250, 250);
+      doc.rect(30, yPosition - 3, pageWidth - 60, 12, 'F');
+    }
     
+    // Field label
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(`${field.label}:`, 35, yPosition);
+    
+    // Field value
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
     const textWidth = doc.getTextWidth(field.value);
-    if (textWidth > pageWidth - 100) {
+    if (textWidth > pageWidth - 120) {
       // Split long text
-      const splitText = doc.splitTextToSize(field.value, pageWidth - 100);
-      doc.text(splitText, 25, yPosition + 4);
+      const splitText = doc.splitTextToSize(field.value, pageWidth - 120);
+      doc.text(splitText, 35, yPosition + 4);
       yPosition += lineHeight * splitText.length;
     } else {
-      doc.text(field.value, 25, yPosition + 4);
+      doc.text(field.value, 35, yPosition + 4);
       yPosition += lineHeight;
     }
     
-    yPosition += 5;
+    yPosition += 8;
   });
 
   // Add supply chain transaction history if available
@@ -112,73 +152,114 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
       yPosition = 30;
     }
 
-    yPosition += 10;
+    yPosition += 15;
     
     // Supply Chain History Header
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(12);
     doc.setTextColor(...primaryColor);
-    doc.text('Supply Chain Transaction History', 25, yPosition);
+    doc.text('SUPPLY CHAIN TRANSACTION HISTORY', 30, yPosition);
     yPosition += 8;
 
     // Draw line under header
     doc.setDrawColor(...primaryColor);
-    doc.setLineWidth(0.5);
-    doc.line(25, yPosition, pageWidth - 25, yPosition);
-    yPosition += 8;
+    doc.setLineWidth(1);
+    doc.line(30, yPosition, pageWidth - 30, yPosition);
+    yPosition += 10;
 
-    // Transaction details
-    doc.setFontSize(10);
+    // Transaction details in formal format
+    doc.setFontSize(9);
     doc.setTextColor(...textColor);
     
     batchData.transactionHistory.forEach((transaction, index) => {
-      if (yPosition > pageHeight - 40) {
+      if (yPosition > pageHeight - 60) {
         doc.addPage();
         yPosition = 30;
       }
 
-      // Transaction type and date
+      // Transaction header
       doc.setFont('helvetica', 'bold');
-      doc.text(`${index + 1}. ${transaction.type.toUpperCase()}`, 25, yPosition);
+      doc.setFontSize(10);
+      doc.text(`Transaction ${index + 1}: ${transaction.type.toUpperCase()}`, 35, yPosition);
       doc.setFont('helvetica', 'normal');
-      doc.text(new Date(transaction.timestamp).toLocaleDateString(), pageWidth - 60, yPosition);
-      yPosition += 5;
-
-      // Transaction details
       doc.setFontSize(9);
-      doc.text(`From: ${transaction.from}`, 30, yPosition);
-      yPosition += 4;
-      doc.text(`To: ${transaction.to}`, 30, yPosition);
-      yPosition += 4;
-      doc.text(`Quantity: ${transaction.quantity} kg`, 30, yPosition);
-      yPosition += 4;
-      doc.text(`Price: ₹${(transaction.price / 100).toFixed(2)}`, 30, yPosition);
-      yPosition += 4;
+      doc.text(new Date(transaction.timestamp).toLocaleDateString('en-IN'), pageWidth - 35, yPosition, { align: 'right' });
+      yPosition += 6;
+
+      // Transaction details in table format
+      const details = [
+        { label: 'From', value: transaction.from },
+        { label: 'To', value: transaction.to },
+        { label: 'Quantity', value: `${transaction.quantity} kg` },
+        { label: 'Price', value: `₹${(transaction.price / 100).toFixed(2)}` }
+      ];
+
+      details.forEach(detail => {
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${detail.label}:`, 40, yPosition);
+        doc.setFont('helvetica', 'normal');
+        doc.text(detail.value, 40 + 25, yPosition);
+        yPosition += 4;
+      });
       
       if (transaction.location) {
-        doc.text(`Location: ${transaction.location}`, 30, yPosition);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Location:', 40, yPosition);
+        doc.setFont('helvetica', 'normal');
+        doc.text(transaction.location, 40 + 25, yPosition);
         yPosition += 4;
       }
       
       if (transaction.notes) {
-        doc.text(`Notes: ${transaction.notes}`, 30, yPosition);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Notes:', 40, yPosition);
+        doc.setFont('helvetica', 'normal');
+        doc.text(transaction.notes, 40 + 25, yPosition);
         yPosition += 4;
       }
 
-      yPosition += 6;
+      yPosition += 8;
     });
   }
   
-  // Footer
-  doc.setFillColor(...secondaryColor);
-  doc.rect(0, pageHeight - 30, pageWidth, 30, 'F');
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(10);
+  // Official declaration
+  yPosition += 10;
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('This certificate is issued under the authority of the Government of Odisha', 30, yPosition);
+  yPosition += 6;
   doc.setFont('helvetica', 'normal');
-  doc.text('Issued by Government of Odisha Agricultural Department', pageWidth / 2, pageHeight - 20, { align: 'center' });
-  doc.text(`Date: ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight - 15, { align: 'center' });
-  doc.text('This certificate verifies the authenticity and traceability of the agricultural produce.', pageWidth / 2, pageHeight - 10, { align: 'center' });
+  doc.text('and certifies the authenticity and traceability of the above-mentioned agricultural produce.', 30, yPosition);
+  
+  // Footer with official signatures
+  yPosition = pageHeight - 60;
+  
+  // Signature lines
+  doc.setDrawColor(...textColor);
+  doc.setLineWidth(0.5);
+  doc.line(50, yPosition, 120, yPosition);
+  doc.line(pageWidth - 120, yPosition, pageWidth - 50, yPosition);
+  
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Authorized Signatory', 50, yPosition + 8);
+  doc.text('Department of Agriculture', 50, yPosition + 12);
+  doc.text('Government of Odisha', 50, yPosition + 16);
+  
+  doc.text('Digital Verification', pageWidth - 120, yPosition + 8);
+  doc.text('Blockchain Hash', pageWidth - 120, yPosition + 12);
+  doc.text(batchData.ipfsHash ? `${batchData.ipfsHash.substring(0, 15)}...` : 'N/A', pageWidth - 120, yPosition + 16);
+  
+  // Official seal area
+  yPosition = pageHeight - 40;
+  doc.setFillColor(...accentColor);
+  doc.circle(pageWidth / 2, yPosition, 12, 'F');
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(6);
+  doc.setFont('helvetica', 'bold');
+  doc.text('OFFICIAL', pageWidth / 2, yPosition - 2, { align: 'center' });
+  doc.text('SEAL', pageWidth / 2, yPosition + 2, { align: 'center' });
+  doc.text('ODISHA', pageWidth / 2, yPosition + 6, { align: 'center' });
   
   // Generate blob
   const pdfBlob = doc.output('blob');

@@ -19,7 +19,7 @@ export const recordSupplyChainTransaction = async (
     // Get existing batch data
     const { data: batch, error: fetchError } = await (supabase as any)
       .from('batches')
-      .select('grading, harvest_quantity')
+      .select('lab_test_results, harvest_quantity')
       .eq('id', batchId)
       .single();
 
@@ -27,11 +27,11 @@ export const recordSupplyChainTransaction = async (
       throw fetchError;
     }
 
-    // Parse existing transaction history from grading field or create new array
+    // Parse existing transaction history from lab_test_results field or create new array
     let transactionHistory: SupplyChainTransaction[] = [];
-    if (batch?.grading && batch.grading.includes('| SupplyChain:')) {
+    if (batch?.lab_test_results && batch.lab_test_results.includes('| SupplyChain:')) {
       try {
-        const historyPart = batch.grading.split('| SupplyChain:')[1];
+        const historyPart = batch.lab_test_results.split('| SupplyChain:')[1];
         transactionHistory = JSON.parse(historyPart);
       } catch (e) {
         console.warn('Failed to parse existing transaction history, starting fresh');
@@ -42,15 +42,15 @@ export const recordSupplyChainTransaction = async (
     // Add new transaction
     transactionHistory.push(fullTransaction);
 
-    // Update batch with new transaction history in grading field
-    const originalGrading = batch.grading.split('| SupplyChain:')[0] || batch.grading;
-    const updatedGrading = `${originalGrading} | SupplyChain:${JSON.stringify(transactionHistory)}`;
+    // Update batch with new transaction history in lab_test_results field
+    const originalLabTest = batch.lab_test_results ? batch.lab_test_results.split('| SupplyChain:')[0] : '';
+    const updatedLabTest = `${originalLabTest} | SupplyChain:${JSON.stringify(transactionHistory)}`;
 
     // Update batch with new transaction history
     const { error: updateError } = await (supabase as any)
       .from('batches')
       .update({ 
-        grading: updatedGrading
+        lab_test_results: updatedLabTest
       })
       .eq('id', batchId);
 
@@ -72,7 +72,7 @@ export const getSupplyChainHistory = async (batchId: string): Promise<SupplyChai
   try {
     const { data: batch, error } = await (supabase as any)
       .from('batches')
-      .select('grading')
+      .select('lab_test_results')
       .eq('id', batchId)
       .single();
 
@@ -80,15 +80,15 @@ export const getSupplyChainHistory = async (batchId: string): Promise<SupplyChai
       throw error;
     }
 
-    if (!batch?.grading || !batch.grading.includes('| SupplyChain:')) {
+    if (!batch?.lab_test_results || !batch.lab_test_results.includes('| SupplyChain:')) {
       return [];
     }
 
     try {
-      const historyPart = batch.grading.split('| SupplyChain:')[1];
+      const historyPart = batch.lab_test_results.split('| SupplyChain:')[1];
       return JSON.parse(historyPart);
     } catch (e) {
-      console.warn('Failed to parse supply chain history from grading field');
+      console.warn('Failed to parse supply chain history from lab_test_results field');
       return [];
     }
   } catch (error) {
