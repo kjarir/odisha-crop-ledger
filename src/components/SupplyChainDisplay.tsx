@@ -255,11 +255,21 @@ export const SupplyChainDisplay: React.FC<SupplyChainDisplayProps> = ({ batchId,
             </div>
             <div>
               <span className="text-blue-700 font-medium">Current Quantity:</span>
-              <p className="text-blue-900">{batch.current_quantity || batch.harvest_quantity || 0} kg</p>
+              <p className="text-blue-900">
+                {transactions.length > 0 
+                  ? Math.max(0, (batch.harvest_quantity || 0) - transactions
+                      .filter(tx => tx.type === 'purchase' || tx.type === 'transfer')
+                      .reduce((sum, tx) => sum + tx.quantity, 0)) 
+                  : batch.harvest_quantity || 0} kg
+              </p>
             </div>
             <div>
               <span className="text-blue-700 font-medium">Current Owner:</span>
-              <p className="text-blue-900">{batch.current_owner || batch.farmer || 'Unknown'}</p>
+              <p className="text-blue-900">
+                {transactions.length > 0 
+                  ? transactions[transactions.length - 1]?.to || batch.farmer || 'Unknown'
+                  : batch.farmer || 'Unknown'}
+              </p>
             </div>
           </div>
         </div>

@@ -19,7 +19,7 @@ export const recordSupplyChainTransaction = async (
     // Get existing batch data
     const { data: batch, error: fetchError } = await (supabase as any)
       .from('batches')
-      .select('supply_chain_history, current_quantity, harvest_quantity')
+      .select('grading, harvest_quantity')
       .eq('id', batchId)
       .single();
 
@@ -27,11 +27,12 @@ export const recordSupplyChainTransaction = async (
       throw fetchError;
     }
 
-    // Parse existing transaction history or create new array
+    // Parse existing transaction history from grading field or create new array
     let transactionHistory: SupplyChainTransaction[] = [];
-    if (batch?.supply_chain_history) {
+    if (batch?.grading && batch.grading.includes('| SupplyChain:')) {
       try {
-        transactionHistory = JSON.parse(batch.supply_chain_history);
+        const historyPart = batch.grading.split('| SupplyChain:')[1];
+        transactionHistory = JSON.parse(historyPart);
       } catch (e) {
         console.warn('Failed to parse existing transaction history, starting fresh');
         transactionHistory = [];
@@ -41,19 +42,15 @@ export const recordSupplyChainTransaction = async (
     // Add new transaction
     transactionHistory.push(fullTransaction);
 
-    // Update current quantity based on transaction type
-    let newCurrentQuantity = batch.current_quantity || batch.harvest_quantity || 0;
-    if (transaction.type === 'purchase' || transaction.type === 'transfer') {
-      newCurrentQuantity = Math.max(0, newCurrentQuantity - transaction.quantity);
-    }
+    // Update batch with new transaction history in grading field
+    const originalGrading = batch.grading.split('| SupplyChain:')[0] || batch.grading;
+    const updatedGrading = `${originalGrading} | SupplyChain:${JSON.stringify(transactionHistory)}`;
 
     // Update batch with new transaction history
     const { error: updateError } = await (supabase as any)
       .from('batches')
       .update({ 
-        supply_chain_history: JSON.stringify(transactionHistory),
-        current_quantity: newCurrentQuantity,
-        current_owner: transaction.to // Update current owner
+        grading: updatedGrading
       })
       .eq('id', batchId);
 
@@ -75,7 +72,7 @@ export const getSupplyChainHistory = async (batchId: string): Promise<SupplyChai
   try {
     const { data: batch, error } = await (supabase as any)
       .from('batches')
-      .select('supply_chain_history')
+      .select('grading')
       .eq('id', batchId)
       .single();
 
@@ -83,11 +80,17 @@ export const getSupplyChainHistory = async (batchId: string): Promise<SupplyChai
       throw error;
     }
 
-    if (!batch?.supply_chain_history) {
+    if (!batch?.grading || !batch.grading.includes('| SupplyChain:')) {
       return [];
     }
 
-    return JSON.parse(batch.supply_chain_history);
+    try {
+      const historyPart = batch.grading.split('| SupplyChain:')[1];
+      return JSON.parse(historyPart);
+    } catch (e) {
+      console.warn('Failed to parse supply chain history from grading field');
+      return [];
+    }
   } catch (error) {
     console.error('Error fetching supply chain history:', error);
     return [];
@@ -201,6 +204,24 @@ export const getEnhancedBatchData = async (batchId: string): Promise<EnhancedBat
     // Get transaction history
     const transactionHistory = await getSupplyChainHistory(batchId);
 
+    // Calculate current quantity by subtracting sold quantities from harvest quantity
+    let currentQuantity = batch.harvest_quantity || 0;
+    if (transactionHistory.length > 0) {
+      const soldQuantity = transactionHistory
+        .filter(tx => tx.type === 'purchase' || tx.type === 'transfer')
+        .reduce((sum, tx) => sum + tx.quantity, 0);
+      currentQuantity = Math.max(0, currentQuantity - soldQuantity);
+    }
+
+    // Get the latest owner from transaction history
+    let currentOwner = batch.farmer || 'Unknown';
+    if (transactionHistory.length > 0) {
+      const latestTransaction = transactionHistory[transactionHistory.length - 1];
+      if (latestTransaction.type === 'purchase' || latestTransaction.type === 'transfer') {
+        currentOwner = latestTransaction.to;
+      }
+    }
+
     // Convert to enhanced batch data format
     const enhancedBatch: EnhancedBatchData = {
       id: batch.blockchain_id || batch.blockchain_batch_id || parseInt(batchId),
@@ -220,9 +241,9 @@ export const getEnhancedBatchData = async (batchId: string): Promise<EnhancedBat
       summary: batch.summary || '',
       callStatus: batch.call_status || '',
       offTopicCount: batch.off_topic_count || 0,
-      currentOwner: batch.current_owner || batch.farmer || '',
+      currentOwner: currentOwner,
       transactionHistory,
-      currentQuantity: batch.current_quantity || batch.harvest_quantity || 0,
+      currentQuantity: currentQuantity,
       originalQuantity: batch.harvest_quantity || 0
     };
 
