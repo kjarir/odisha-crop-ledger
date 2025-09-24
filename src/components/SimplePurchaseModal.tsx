@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { createPurchaseTransaction } from '@/utils/supplyChainTracker';
+import { createPurchaseTransaction, getSupplyChainHistory } from '@/utils/supplyChainTracker';
 import { 
   ShoppingCart, 
   Package, 
@@ -39,9 +39,37 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
   const [quantity, setQuantity] = useState(1);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [loading, setLoading] = useState(false);
+  const [availableQuantity, setAvailableQuantity] = useState(batch?.harvest_quantity || 0);
   
   const { user } = useAuth();
   const { toast } = useToast();
+
+  // Calculate current available quantity
+  useEffect(() => {
+    const calculateAvailableQuantity = async () => {
+      if (!batch) return;
+      
+      try {
+        const transactions = await getSupplyChainHistory(batch.id);
+        
+        if (transactions.length > 0) {
+          const soldQuantity = transactions
+            .filter(tx => tx.type === 'purchase' || tx.type === 'transfer')
+            .reduce((sum, tx) => sum + tx.quantity, 0);
+          
+          const available = Math.max(0, batch.harvest_quantity - soldQuantity);
+          setAvailableQuantity(available);
+        } else {
+          setAvailableQuantity(batch.harvest_quantity);
+        }
+      } catch (error) {
+        console.error('Error calculating available quantity:', error);
+        setAvailableQuantity(batch.harvest_quantity);
+      }
+    };
+
+    calculateAvailableQuantity();
+  }, [batch]);
 
   // Reset modal state when it opens - no useEffect needed
   const handleOpenChange = (open: boolean) => {
@@ -192,13 +220,13 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
                     id="quantity"
                     type="number"
                     min="1"
-                    max={batch.harvest_quantity}
+                    max={availableQuantity}
                     value={quantity}
                     onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
                     className="mt-1"
                   />
                   <p className="text-sm text-muted-foreground mt-1">
-                    Available: {batch.harvest_quantity} kg
+                    Available: {availableQuantity} kg
                   </p>
                 </div>
 

@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { SupplyChainTransaction, EnhancedBatchData } from './certificateGenerator';
+import { updateCertificateWithSupplyChain } from './ipfsCertificateUpdater';
 
 /**
  * Store a new supply chain transaction
@@ -56,6 +57,15 @@ export const recordSupplyChainTransaction = async (
 
     if (updateError) {
       throw updateError;
+    }
+
+    // Update the IPFS certificate with new transaction data
+    try {
+      await updateCertificateWithSupplyChain(batchId);
+      console.log(`Updated IPFS certificate for batch ${batchId} with new transaction`);
+    } catch (certError) {
+      console.warn('Failed to update IPFS certificate:', certError);
+      // Don't fail the transaction if certificate update fails
     }
 
     return transactionId;
