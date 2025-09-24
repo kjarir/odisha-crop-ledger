@@ -1,8 +1,28 @@
 import jsPDF from 'jspdf';
 import { Batch } from '@/contracts/config';
 
+// Enhanced transaction interface for supply chain tracking
+export interface SupplyChainTransaction {
+  id: string;
+  type: 'harvest' | 'purchase' | 'transfer' | 'processing' | 'retail';
+  from: string;
+  to: string;
+  quantity: number;
+  price: number;
+  timestamp: string;
+  location?: string;
+  notes?: string;
+}
+
+// Enhanced batch data with transaction history
+export interface EnhancedBatchData extends Batch {
+  transactionHistory?: SupplyChainTransaction[];
+  currentQuantity?: number;
+  originalQuantity?: number;
+}
+
 // Certificate generation utility for AgriTrace
-export const generatePDFCertificate = async (batchData: Batch): Promise<Blob> => {
+export const generatePDFCertificate = async (batchData: EnhancedBatchData): Promise<Blob> => {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -43,18 +63,19 @@ export const generatePDFCertificate = async (batchData: Batch): Promise<Blob> =>
   let yPosition = 70;
   const lineHeight = 8;
   
-  // Batch information
+  // Basic batch information
   const fields = [
     { label: 'Batch ID', value: batchData.id ? batchData.id.toString() : 'N/A' },
     { label: 'Crop Type', value: batchData.crop || 'N/A' },
     { label: 'Variety', value: batchData.variety || 'N/A' },
-    { label: 'Harvest Quantity', value: `${batchData.harvestQuantity || 'N/A'} kg` },
+    { label: 'Original Harvest Quantity', value: `${batchData.originalQuantity || batchData.harvestQuantity || 'N/A'} kg` },
+    { label: 'Current Available Quantity', value: `${batchData.currentQuantity || batchData.harvestQuantity || 'N/A'} kg` },
     { label: 'Sowing Date', value: batchData.sowingDate ? new Date(batchData.sowingDate).toLocaleDateString() : 'N/A' },
     { label: 'Harvest Date', value: batchData.harvestDate ? new Date(batchData.harvestDate).toLocaleDateString() : 'N/A' },
     { label: 'Freshness Duration', value: `${batchData.freshnessDuration || 'N/A'} days` },
     { label: 'Grading', value: batchData.grading || 'N/A' },
     { label: 'Certification', value: batchData.certification || 'Standard' },
-    { label: 'Price', value: batchData.price ? `₹${(batchData.price / 100).toFixed(2)}` : 'N/A' },
+    { label: 'Current Market Price', value: batchData.price ? `₹${(batchData.price / 100).toFixed(2)}` : 'N/A' },
     { label: 'Current Owner', value: batchData.currentOwner ? `${batchData.currentOwner.substring(0, 6)}...${batchData.currentOwner.substring(batchData.currentOwner.length - 4)}` : 'N/A' },
     { label: 'Blockchain Hash', value: batchData.ipfsHash || 'N/A' },
   ];
@@ -82,6 +103,71 @@ export const generatePDFCertificate = async (batchData: Batch): Promise<Blob> =>
     
     yPosition += 5;
   });
+
+  // Add supply chain transaction history if available
+  if (batchData.transactionHistory && batchData.transactionHistory.length > 0) {
+    // Check if we need a new page
+    if (yPosition > pageHeight - 120) {
+      doc.addPage();
+      yPosition = 30;
+    }
+
+    yPosition += 10;
+    
+    // Supply Chain History Header
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(...primaryColor);
+    doc.text('Supply Chain Transaction History', 25, yPosition);
+    yPosition += 8;
+
+    // Draw line under header
+    doc.setDrawColor(...primaryColor);
+    doc.setLineWidth(0.5);
+    doc.line(25, yPosition, pageWidth - 25, yPosition);
+    yPosition += 8;
+
+    // Transaction details
+    doc.setFontSize(10);
+    doc.setTextColor(...textColor);
+    
+    batchData.transactionHistory.forEach((transaction, index) => {
+      if (yPosition > pageHeight - 40) {
+        doc.addPage();
+        yPosition = 30;
+      }
+
+      // Transaction type and date
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${index + 1}. ${transaction.type.toUpperCase()}`, 25, yPosition);
+      doc.setFont('helvetica', 'normal');
+      doc.text(new Date(transaction.timestamp).toLocaleDateString(), pageWidth - 60, yPosition);
+      yPosition += 5;
+
+      // Transaction details
+      doc.setFontSize(9);
+      doc.text(`From: ${transaction.from}`, 30, yPosition);
+      yPosition += 4;
+      doc.text(`To: ${transaction.to}`, 30, yPosition);
+      yPosition += 4;
+      doc.text(`Quantity: ${transaction.quantity} kg`, 30, yPosition);
+      yPosition += 4;
+      doc.text(`Price: ₹${(transaction.price / 100).toFixed(2)}`, 30, yPosition);
+      yPosition += 4;
+      
+      if (transaction.location) {
+        doc.text(`Location: ${transaction.location}`, 30, yPosition);
+        yPosition += 4;
+      }
+      
+      if (transaction.notes) {
+        doc.text(`Notes: ${transaction.notes}`, 30, yPosition);
+        yPosition += 4;
+      }
+
+      yPosition += 6;
+    });
+  }
   
   // Footer
   doc.setFillColor(...secondaryColor);

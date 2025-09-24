@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { createPurchaseTransaction } from '@/utils/supplyChainTracker';
 import { 
   ShoppingCart, 
   Package, 
@@ -83,11 +84,22 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
     setLoading(true);
 
     try {
-      const purchaseInfo = `| Purchase: ${user.email || 'Unknown'} bought ${quantity}kg for ₹${finalTotal} on ${new Date().toLocaleDateString()}`;
+      // Record the purchase transaction in supply chain
+      const currentOwner = batch.farmer || batch.current_owner || 'Unknown Farmer';
+      const buyerName = user.email || user.name || 'Unknown Buyer';
       
+      await createPurchaseTransaction(
+        batch.id,
+        currentOwner,
+        buyerName,
+        quantity,
+        unitPrice,
+        deliveryAddress
+      );
+
+      // Update batch status
       const purchaseData = {
-        grading: `${batch.grading}${purchaseInfo}`,
-        status: 'available'
+        status: 'available' // Keep available for other purchases
       };
 
       const { error: purchaseError } = await (supabase as any)
@@ -105,7 +117,7 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
       onPurchaseComplete();
       toast({
         title: "Purchase Successful!",
-        description: `Your order for ${quantity}kg of ${batch.crop_type} has been placed.`,
+        description: `Your order for ${quantity}kg of ${batch.crop_type} has been placed. The certificate has been updated with your purchase details.`,
       });
     } catch (error) {
       console.error('Purchase error:', error);

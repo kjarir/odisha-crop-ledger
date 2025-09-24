@@ -6,6 +6,7 @@ import { useWeb3 } from '@/contexts/Web3Context';
 import { useContract } from '@/hooks/useContract';
 import { generatePDFCertificate } from '@/utils/certificateGenerator';
 import { uploadCertificateToIPFS, uploadBatchMetadataToIPFS } from '@/utils/ipfs';
+import { createHarvestTransaction } from '@/utils/supplyChainTracker';
 import { BatchInput, CONTRACT_ADDRESS } from '@/contracts/config';
 import AgriTraceABI from '@/contracts/AgriTrace.json';
 import { 
@@ -268,6 +269,20 @@ export const BatchRegistration = () => {
         } catch (dbError) {
           console.warn('Failed to save to local database:', dbError);
           // Don't fail the entire process if local DB save fails
+        }
+
+        // Create initial harvest transaction
+        try {
+          await createHarvestTransaction(
+            batchId.toString(),
+            account || 'Unknown Farmer',
+            parseFloat(formData.harvestQuantity),
+            calculatedPrice,
+            'Farm Location'
+          );
+        } catch (harvestError) {
+          console.warn('Failed to create harvest transaction:', harvestError);
+          // Don't fail the entire process if harvest transaction creation fails
         }
 
         setStep('complete');

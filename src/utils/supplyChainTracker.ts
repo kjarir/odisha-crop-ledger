@@ -1,0 +1,253 @@
+import { supabase } from '@/integrations/supabase/client';
+import { SupplyChainTransaction, EnhancedBatchData } from './certificateGenerator';
+
+/**
+ * Store a new supply chain transaction
+ */
+export const recordSupplyChainTransaction = async (
+  batchId: string,
+  transaction: Omit<SupplyChainTransaction, 'id' | 'timestamp'>
+): Promise<string> => {
+  try {
+    const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const fullTransaction: SupplyChainTransaction = {
+      ...transaction,
+      id: transactionId,
+      timestamp: new Date().toISOString()
+    };
+
+    // Get existing batch data
+    const { data: batch, error: fetchError } = await (supabase as any)
+      .from('batches')
+      .select('supply_chain_history, current_quantity, harvest_quantity')
+      .eq('id', batchId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    // Parse existing transaction history or create new array
+    let transactionHistory: SupplyChainTransaction[] = [];
+    if (batch?.supply_chain_history) {
+      try {
+        transactionHistory = JSON.parse(batch.supply_chain_history);
+      } catch (e) {
+        console.warn('Failed to parse existing transaction history, starting fresh');
+        transactionHistory = [];
+      }
+    }
+
+    // Add new transaction
+    transactionHistory.push(fullTransaction);
+
+    // Update current quantity based on transaction type
+    let newCurrentQuantity = batch.current_quantity || batch.harvest_quantity || 0;
+    if (transaction.type === 'purchase' || transaction.type === 'transfer') {
+      newCurrentQuantity = Math.max(0, newCurrentQuantity - transaction.quantity);
+    }
+
+    // Update batch with new transaction history
+    const { error: updateError } = await (supabase as any)
+      .from('batches')
+      .update({ 
+        supply_chain_history: JSON.stringify(transactionHistory),
+        current_quantity: newCurrentQuantity,
+        current_owner: transaction.to // Update current owner
+      })
+      .eq('id', batchId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return transactionId;
+  } catch (error) {
+    console.error('Error recording supply chain transaction:', error);
+    throw new Error('Failed to record supply chain transaction');
+  }
+};
+
+/**
+ * Get supply chain transaction history for a batch
+ */
+export const getSupplyChainHistory = async (batchId: string): Promise<SupplyChainTransaction[]> => {
+  try {
+    const { data: batch, error } = await (supabase as any)
+      .from('batches')
+      .select('supply_chain_history')
+      .eq('id', batchId)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    if (!batch?.supply_chain_history) {
+      return [];
+    }
+
+    return JSON.parse(batch.supply_chain_history);
+  } catch (error) {
+    console.error('Error fetching supply chain history:', error);
+    return [];
+  }
+};
+
+/**
+ * Create initial harvest transaction when batch is registered
+ */
+export const createHarvestTransaction = async (
+  batchId: string,
+  farmerName: string,
+  quantity: number,
+  price: number,
+  location?: string
+): Promise<string> => {
+  return await recordSupplyChainTransaction(batchId, {
+    type: 'harvest',
+    from: 'Farm',
+    to: farmerName,
+    quantity,
+    price,
+    location: location || 'Farm Location',
+    notes: 'Initial harvest and registration'
+  });
+};
+
+/**
+ * Create purchase transaction when someone buys the product
+ */
+export const createPurchaseTransaction = async (
+  batchId: string,
+  fromOwner: string,
+  toBuyer: string,
+  quantity: number,
+  unitPrice: number,
+  deliveryAddress: string
+): Promise<string> => {
+  const totalPrice = quantity * unitPrice;
+  
+  return await recordSupplyChainTransaction(batchId, {
+    type: 'purchase',
+    from: fromOwner,
+    to: toBuyer,
+    quantity,
+    price: totalPrice,
+    location: deliveryAddress,
+    notes: `Purchase of ${quantity}kg at ₹${unitPrice}/kg`
+  });
+};
+
+/**
+ * Create processing transaction (e.g., when product goes to processing facility)
+ */
+export const createProcessingTransaction = async (
+  batchId: string,
+  fromOwner: string,
+  toProcessor: string,
+  quantity: number,
+  processingFee: number,
+  location?: string
+): Promise<string> => {
+  return await recordSupplyChainTransaction(batchId, {
+    type: 'processing',
+    from: fromOwner,
+    to: toProcessor,
+    quantity,
+    price: processingFee,
+    location: location || 'Processing Facility',
+    notes: 'Product processing and quality enhancement'
+  });
+};
+
+/**
+ * Create retail transaction (e.g., when product reaches retail store)
+ */
+export const createRetailTransaction = async (
+  batchId: string,
+  fromOwner: string,
+  toRetailer: string,
+  quantity: number,
+  retailPrice: number,
+  location?: string
+): Promise<string> => {
+  return await recordSupplyChainTransaction(batchId, {
+    type: 'retail',
+    from: fromOwner,
+    to: toRetailer,
+    quantity,
+    price: retailPrice,
+    location: location || 'Retail Store',
+    notes: 'Product available for retail sale'
+  });
+};
+
+/**
+ * Get enhanced batch data with transaction history for certificate generation
+ */
+export const getEnhancedBatchData = async (batchId: string): Promise<EnhancedBatchData | null> => {
+  try {
+    const { data: batch, error } = await (supabase as any)
+      .from('batches')
+      .select('*')
+      .eq('id', batchId)
+      .single();
+
+    if (error || !batch) {
+      return null;
+    }
+
+    // Get transaction history
+    const transactionHistory = await getSupplyChainHistory(batchId);
+
+    // Convert to enhanced batch data format
+    const enhancedBatch: EnhancedBatchData = {
+      id: batch.blockchain_id || batch.blockchain_batch_id || parseInt(batchId),
+      farmer: batch.farmer || 'Unknown',
+      crop: batch.crop_type || '',
+      variety: batch.variety || '',
+      harvestQuantity: batch.harvest_quantity?.toString() || '',
+      sowingDate: batch.sowing_date || '',
+      harvestDate: batch.harvest_date || '',
+      freshnessDuration: batch.freshness_duration?.toString() || '7',
+      grading: batch.grading || 'Standard',
+      certification: batch.certification || 'Standard',
+      labTest: batch.lab_test_results || '',
+      price: Math.floor((batch.price_per_kg || 0) * 100), // Convert to paise
+      ipfsHash: batch.ipfs_hash || batch.ipfs_certificate_hash || '',
+      languageDetected: batch.language_detected || '',
+      summary: batch.summary || '',
+      callStatus: batch.call_status || '',
+      offTopicCount: batch.off_topic_count || 0,
+      currentOwner: batch.current_owner || batch.farmer || '',
+      transactionHistory,
+      currentQuantity: batch.current_quantity || batch.harvest_quantity || 0,
+      originalQuantity: batch.harvest_quantity || 0
+    };
+
+    return enhancedBatch;
+  } catch (error) {
+    console.error('Error getting enhanced batch data:', error);
+    return null;
+  }
+};
+
+/**
+ * Generate updated certificate with current transaction history
+ */
+export const generateUpdatedCertificate = async (batchId: string): Promise<Blob | null> => {
+  try {
+    const enhancedBatchData = await getEnhancedBatchData(batchId);
+    if (!enhancedBatchData) {
+      throw new Error('Batch not found');
+    }
+
+    // Import the certificate generator
+    const { generatePDFCertificate } = await import('./certificateGenerator');
+    return await generatePDFCertificate(enhancedBatchData);
+  } catch (error) {
+    console.error('Error generating updated certificate:', error);
+    return null;
+  }
+};
