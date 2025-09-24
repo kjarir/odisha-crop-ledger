@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { BatchDetailsModal } from '@/components/BatchDetailsModal';
-import { SimplePurchaseModal } from '@/components/SimplePurchaseModal';
+import { UltraSimplePurchaseModal } from '@/components/UltraSimplePurchaseModal';
 import { BatchQuantityDisplay } from '@/components/BatchQuantityDisplay';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { 
@@ -382,7 +382,7 @@ export const Marketplace = () => {
 
       {/* Purchase Modal */}
       <ErrorBoundary>
-        <SimplePurchaseModal
+        <UltraSimplePurchaseModal
           batch={selectedBatch}
           isOpen={isPurchaseModalOpen}
           onClose={() => {

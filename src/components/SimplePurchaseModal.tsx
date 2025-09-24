@@ -42,6 +42,17 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
   const { user } = useAuth();
   const { toast } = useToast();
 
+  // Reset modal state when it opens - no useEffect needed
+  const handleOpenChange = (open: boolean) => {
+    if (open) {
+      setStep('details');
+      setQuantity(1);
+      setDeliveryAddress('');
+      setLoading(false);
+    }
+    onClose();
+  };
+
   if (!batch) return null;
 
   const unitPrice = batch.price_per_kg;
@@ -109,21 +120,8 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
     }
   };
 
-  const resetModal = () => {
-    setStep('details');
-    setQuantity(1);
-    setDeliveryAddress('');
-    setLoading(false);
-  };
-
-  React.useEffect(() => {
-    if (isOpen) {
-      resetModal();
-    }
-  }, [isOpen]);
-
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

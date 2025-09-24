@@ -18,6 +18,8 @@ import {
   Download,
   ArrowUpRight
 } from 'lucide-react';
+import { QRCodeModal } from '@/components/QRCodeModal';
+import { QuickCertificateQR } from '@/components/QuickCertificateQR';
 import { Link } from 'react-router-dom';
 import { BatchList } from '@/components/BatchList';
 
@@ -31,6 +33,8 @@ export const FarmerDashboard = () => {
   });
   const [recentBatches, setRecentBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedBatchForQR, setSelectedBatchForQR] = useState<any>(null);
+  const [showCertificateQR, setShowCertificateQR] = useState<any>(null);
 
   useEffect(() => {
     if (user) {
@@ -115,7 +119,7 @@ export const FarmerDashboard = () => {
           </p>
         </div>
         <Button className="gradient-primary" asChild>
-          <Link to="/register-batch">
+          <Link to="/batch-registration">
             <Plus className="h-4 w-4 mr-2" />
             Register New Batch
           </Link>
@@ -254,13 +258,24 @@ export const FarmerDashboard = () => {
                   </div>
 
                   <div className="flex items-center space-x-2">
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" title="View Details">
                       <Eye className="h-3 w-3" />
                     </Button>
-                    <Button size="sm" variant="outline">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      title="View Certificate QR"
+                      onClick={() => {
+                        if (batch.ipfs_hash || batch.ipfs_certificate_hash) {
+                          setShowCertificateQR(batch);
+                        } else {
+                          setSelectedBatchForQR(batch);
+                        }
+                      }}
+                    >
                       <QrCode className="h-3 w-3" />
                     </Button>
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" title="Download Certificate">
                       <Download className="h-3 w-3" />
                     </Button>
                   </div>
@@ -322,6 +337,46 @@ export const FarmerDashboard = () => {
         <BatchList />
       </div>
       </div>
+
+      {/* Certificate QR Modal */}
+      {showCertificateQR && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Certificate QR Code</h3>
+              <button
+                onClick={() => setShowCertificateQR(null)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4">
+              <QuickCertificateQR
+                ipfsHash={showCertificateQR.ipfs_hash || showCertificateQR.ipfs_certificate_hash}
+                batchId={showCertificateQR.blockchain_id || showCertificateQR.blockchain_batch_id || showCertificateQR.id}
+                cropType={showCertificateQR.crop_type}
+                variety={showCertificateQR.variety}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full QR Code Modal */}
+      {selectedBatchForQR && (
+        <QRCodeModal
+          isOpen={!!selectedBatchForQR}
+          onClose={() => setSelectedBatchForQR(null)}
+          batchId={selectedBatchForQR.blockchain_id || selectedBatchForQR.blockchain_batch_id || selectedBatchForQR.id}
+          cropType={selectedBatchForQR.crop_type}
+          variety={selectedBatchForQR.variety}
+          harvestDate={selectedBatchForQR.harvest_date}
+          farmerId={selectedBatchForQR.farmer_id}
+          blockchainHash={selectedBatchForQR.blockchain_hash}
+          ipfsHash={selectedBatchForQR.ipfs_hash || selectedBatchForQR.ipfs_certificate_hash}
+        />
+      )}
     </div>
   );
 };

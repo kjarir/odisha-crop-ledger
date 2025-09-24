@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Menu, X, Leaf, User, ShoppingCart, Shield, LogIn, LogOut, Wallet } from 'lucide-react';
+import { Menu, X, Leaf, User, ShoppingCart, Shield, LogIn, LogOut, Wallet, QrCode } from 'lucide-react';
+import { QRCodeScanner } from '@/components/QRCodeScanner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWeb3 } from '@/contexts/Web3Context';
 import {
@@ -14,6 +15,7 @@ import {
 
 export const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
   const { user, signOut } = useAuth();
   const { isConnected, connectWallet, account, disconnectWallet } = useWeb3();
   const navigate = useNavigate();
@@ -48,6 +50,15 @@ export const Header = () => {
           <Link to="/verify" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
             Verify Certificate
           </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsQRScannerOpen(true)}
+            className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth"
+          >
+            <QrCode className="h-4 w-4 mr-1" />
+            Scan QR
+          </Button>
           <Link to="/about" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
             About
           </Link>
@@ -174,6 +185,16 @@ export const Header = () => {
             >
               Verify Certificate
             </Link>
+            <button
+              onClick={() => {
+                setIsMenuOpen(false);
+                setIsQRScannerOpen(true);
+              }}
+              className="block text-sm font-medium text-muted-foreground hover:text-primary transition-smooth w-full text-left"
+            >
+              <QrCode className="h-4 w-4 inline mr-2" />
+              Scan QR Code
+            </button>
             <Link
               to="/dashboard"
               className="block text-sm font-medium text-muted-foreground hover:text-primary transition-smooth"
@@ -227,6 +248,12 @@ export const Header = () => {
           </div>
         </div>
       )}
+
+      {/* QR Code Scanner Modal */}
+      <QRCodeScanner
+        isOpen={isQRScannerOpen}
+        onClose={() => setIsQRScannerOpen(false)}
+      />
     </header>
   );
 };

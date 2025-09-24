@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SupplyChainTracker } from './SupplyChainTracker';
+import { QRCodeDisplay } from './QRCodeDisplay';
 
 interface BatchDetailsModalProps {
   batch: any;
@@ -293,9 +294,22 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
           </div>
 
           {/* Supply Chain Tracking */}
-          <div className="mt-6">
-            <SupplyChainTracker batchId={batch.id} />
-          </div>
+            <div className="mt-6">
+              <SupplyChainTracker batchId={batch.id} />
+            </div>
+
+            {/* QR Code Display */}
+            <div className="mt-6">
+              <QRCodeDisplay
+                batchId={batch.blockchain_id || batch.blockchain_batch_id || batch.id}
+                cropType={batch.crop_type}
+                variety={batch.variety}
+                harvestDate={batch.harvest_date}
+                farmerId={batch.farmer_id}
+                blockchainHash={batch.blockchain_hash}
+                ipfsHash={batch.ipfs_hash || batch.ipfs_certificate_hash}
+              />
+            </div>
 
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-3 pt-4">
