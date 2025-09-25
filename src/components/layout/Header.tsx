@@ -50,6 +50,9 @@ export const Header = () => {
           <Link to="/verify" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
             Verify Certificate
           </Link>
+          <Link to="/verification" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
+            Supply Chain Verification
+          </Link>
           <Button
             variant="ghost"
             size="sm"
@@ -184,6 +187,13 @@ export const Header = () => {
               onClick={() => setIsMenuOpen(false)}
             >
               Verify Certificate
+            </Link>
+            <Link
+              to="/verification"
+              className="block text-sm font-medium text-muted-foreground hover:text-primary transition-smooth"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Supply Chain Verification
             </Link>
             <button
               onClick={() => {

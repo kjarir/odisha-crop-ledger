@@ -23,6 +23,8 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DataCleanupButton } from '@/components/DataCleanupButton';
+import { DatabaseMigrationButton } from '@/components/DatabaseMigrationButton';
+import { TransactionSystemTest } from '@/components/TransactionSystemTest';
 
 export const Admin = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -532,12 +534,16 @@ export const Admin = () => {
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Data Cleanup Section */}
-                <div className="border rounded-lg p-4 bg-red-50">
-                  <h3 className="font-semibold text-red-800 mb-2">Data Cleanup</h3>
-                  <p className="text-sm text-red-700 mb-3">
-                    Clean up grading fields that contain old supply chain data. This will remove any purchase history or transaction data from the grading field.
-                  </p>
-                  <DataCleanupButton />
+                <div className="space-y-4">
+                  <DatabaseMigrationButton />
+                  <TransactionSystemTest />
+                  <div className="border rounded-lg p-4 bg-red-50">
+                    <h3 className="font-semibold text-red-800 mb-2">Data Cleanup</h3>
+                    <p className="text-sm text-red-700 mb-3">
+                      Clean up grading fields that contain old supply chain data. This will remove any purchase history or transaction data from the grading field.
+                    </p>
+                    <DataCleanupButton />
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <Card>

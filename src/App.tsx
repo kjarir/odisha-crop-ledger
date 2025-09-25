@@ -19,6 +19,7 @@ import { Profile } from "./pages/Profile";
 import { BatchRegistration } from "./pages/BatchRegistration";
 import { Admin } from "./pages/Admin";
 import { CertificateVerification } from "./components/CertificateVerification";
+import { Verification } from "./pages/Verification";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
@@ -50,6 +51,7 @@ const App = () => (
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/batch-registration" element={<BatchRegistration />} />
                   <Route path="/verify" element={<CertificateVerification />} />
+                  <Route path="/verification" element={<Verification />} />
                   <Route path="/admin" element={<Admin />} />
                   <Route path="/about" element={<Index />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

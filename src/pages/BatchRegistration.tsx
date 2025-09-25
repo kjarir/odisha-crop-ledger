@@ -4,9 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWeb3 } from '@/contexts/Web3Context';
 import { useContract } from '@/hooks/useContract';
-import { generatePDFCertificate } from '@/utils/certificateGenerator';
-import { uploadCertificateToIPFS, uploadBatchMetadataToIPFS } from '@/utils/ipfs';
-import { createHarvestTransaction } from '@/utils/supplyChainTracker';
+import { properGroupManager } from '@/utils/properGroupManager';
+import { uploadBatchMetadataToIPFS } from '@/utils/ipfs';
 import { BatchInput, CONTRACT_ADDRESS } from '@/contracts/config';
 import AgriTraceABI from '@/contracts/AgriTrace.json';
 import { 
@@ -31,7 +30,7 @@ import { useNavigate } from 'react-router-dom';
 
 export const BatchRegistration = () => {
   const { user } = useAuth();
-  const { isConnected, connectWallet, account } = useWeb3();
+  const { isConnected, connectWallet, account, provider } = useWeb3();
   const { registerBatch, getNextBatchId, loading: contractLoading } = useContract();
   const [formData, setFormData] = useState({
     cropType: '',
@@ -90,16 +89,27 @@ export const BatchRegistration = () => {
         currentOwner: account || '',
       };
 
-      const pdfBlob = await generatePDFCertificate(batchData);
-      
-      // Step 2: Upload certificate to IPFS
+      // Step 2: Generate harvest certificate and create group
       const tempBatchId = Date.now(); // Temporary ID for file naming
-      const certificateIpfsHash = await uploadCertificateToIPFS(pdfBlob, tempBatchId, batchData);
+      const { pdfBlob, groupId, ipfsHash } = await properGroupManager.uploadHarvestCertificate({
+        batchId: tempBatchId.toString(),
+        farmerName: account || 'Unknown Farmer',
+        cropType: formData.cropType,
+        variety: formData.variety,
+        harvestQuantity: parseFloat(formData.harvestQuantity),
+        harvestDate: formData.harvestDate,
+        grading: formData.grading,
+        certification: formData.certification,
+        pricePerKg: parseFloat(formData.pricePerKg)
+      });
       
       // Step 3: Upload batch metadata to IPFS
       const metadataIpfsHash = await uploadBatchMetadataToIPFS(batchData, tempBatchId);
       
-      setIpfsHash(certificateIpfsHash);
+      setIpfsHash(groupId); // Store group ID instead of individual IPFS hash
+      
+      // Store the certificate IPFS hash for later use
+      const certificateIpfsHash = ipfsHash;
       setStep('blockchain');
 
       // Step 4: Register on blockchain
@@ -121,7 +131,7 @@ export const BatchRegistration = () => {
         certification: formData.certification || 'Standard',
         labTest: formData.labTest,
         price: calculatedPrice,
-        ipfsHash: certificateIpfsHash,
+        ipfsHash: groupId,
         languageDetected: 'en',
         summary: `Agricultural produce batch: ${formData.cropType} - ${formData.variety}`,
         callStatus: 'completed',
@@ -200,7 +210,7 @@ export const BatchRegistration = () => {
                 extractedBatchId = parseInt(foundEvent.topics[1], 16);
                 setBatchId(extractedBatchId);
                 batchData.id = extractedBatchId;
-                batchData.ipfsHash = certificateIpfsHash;
+                batchData.ipfsHash = ipfsHash;
                 console.log('Found batch ID using alternative signature:', extractedBatchId);
               } else {
                 // Final fallback: use timestamp as temporary ID
@@ -210,7 +220,7 @@ export const BatchRegistration = () => {
                 
                 // Update the batch data with the fallback ID
                 batchData.id = extractedBatchId;
-                batchData.ipfsHash = certificateIpfsHash;
+                batchData.ipfsHash = ipfsHash;
               }
             }
           } catch (decodeError) {
@@ -248,7 +258,8 @@ export const BatchRegistration = () => {
           grading: formData.grading,
               freshness_duration: parseInt(formData.freshnessDuration),
           certification: formData.certification || 'Standard',
-          status: 'available'
+          status: 'available',
+          group_id: groupId // Store the group ID
             };
 
             console.log('Inserting batch data:', batchData);
@@ -271,24 +282,13 @@ export const BatchRegistration = () => {
           // Don't fail the entire process if local DB save fails
         }
 
-        // Create initial harvest transaction
-        try {
-          await createHarvestTransaction(
-            batchId.toString(),
-            account || 'Unknown Farmer',
-            parseFloat(formData.harvestQuantity),
-            calculatedPrice,
-            'Farm Location'
-          );
-        } catch (harvestError) {
-          console.warn('Failed to create harvest transaction:', harvestError);
-          // Don't fail the entire process if harvest transaction creation fails
-        }
+        // Group-based system: Certificate is already created and uploaded to group
+        console.log(`Batch registered with Group ID: ${groupId}`);
 
         setStep('complete');
       toast({
         title: "Batch registered successfully!",
-          description: `Your batch has been registered on the blockchain with IPFS hash: ${certificateIpfsHash.substring(0, 10)}...`,
+          description: `Your batch has been registered with Group ID: ${groupId}`,
       });
 
       // Reset form
@@ -392,7 +392,7 @@ export const BatchRegistration = () => {
                   </p>
                   <div className="mt-2 space-y-1 text-sm">
                     <p><strong>Batch ID:</strong> {batchId}</p>
-                    <p><strong>IPFS Hash:</strong> {ipfsHash.substring(0, 20)}...</p>
+                    <p><strong>Group ID:</strong> {ipfsHash}</p>
                   </div>
                 </div>
                 <div className="flex space-x-2">

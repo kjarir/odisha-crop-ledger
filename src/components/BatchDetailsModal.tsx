@@ -18,7 +18,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { SupplyChainTracker } from './SupplyChainTracker';
 import { QRCodeDisplay } from './QRCodeDisplay';
-import { SupplyChainDisplay } from './SupplyChainDisplay';
+import { ImmutableSupplyChainDisplay } from './ImmutableSupplyChainDisplay';
 
 interface BatchDetailsModalProps {
   batch: any;
@@ -296,7 +296,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
 
           {/* Supply Chain Tracking */}
             <div className="mt-6">
-              <SupplyChainDisplay batchId={batch.id} batch={batch} />
+              <ImmutableSupplyChainDisplay batchId={batch.id} />
             </div>
 
             {/* QR Code Display */}

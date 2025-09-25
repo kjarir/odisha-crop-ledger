@@ -60,7 +60,6 @@ export class IPFSService {
         formData,
         {
           headers: {
-            'Content-Type': 'multipart/form-data',
             'pinata_api_key': this.apiKey,
             'pinata_secret_api_key': this.apiSecret,
           },

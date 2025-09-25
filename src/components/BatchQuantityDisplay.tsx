@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { getSupplyChainHistory } from '@/utils/supplyChainTracker';
+import { transactionManager } from '@/utils/transactionManager';
 
 interface BatchQuantityDisplayProps {
   batchId: string;
@@ -20,21 +20,17 @@ export const BatchQuantityDisplay: React.FC<BatchQuantityDisplayProps> = ({
     const calculateCurrentQuantity = async () => {
       try {
         setLoading(true);
-        const transactions = await getSupplyChainHistory(batchId);
+        const chain = await transactionManager.getTransactionChain(batchId);
         
-        if (transactions.length > 0) {
-          // Calculate sold quantity from purchase transactions
-          const soldQuantity = transactions
-            .filter(tx => tx.type === 'purchase' || tx.type === 'transfer')
-            .reduce((sum, tx) => sum + tx.quantity, 0);
-          
-          const available = Math.max(0, originalQuantity - soldQuantity);
-          setCurrentQuantity(available);
-        } else {
+        // If no transactions exist, show original quantity as available
+        if (chain.transactions.length === 0) {
           setCurrentQuantity(originalQuantity);
+        } else {
+          setCurrentQuantity(chain.availableQuantity);
         }
       } catch (error) {
         console.error('Error calculating current quantity:', error);
+        // If there's an error (like table doesn't exist), show original quantity
         setCurrentQuantity(originalQuantity);
       } finally {
         setLoading(false);

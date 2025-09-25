@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { createPurchaseTransaction, getSupplyChainHistory } from '@/utils/supplyChainTracker';
+import { properGroupManager } from '@/utils/properGroupManager';
 import { 
   ShoppingCart, 
   Package, 
@@ -44,31 +44,12 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Calculate current available quantity
+  // For group-based system, we'll show the original harvest quantity
+  // The actual available quantity will be managed by the group certificates
   useEffect(() => {
-    const calculateAvailableQuantity = async () => {
-      if (!batch) return;
-      
-      try {
-        const transactions = await getSupplyChainHistory(batch.id);
-        
-        if (transactions.length > 0) {
-          const soldQuantity = transactions
-            .filter(tx => tx.type === 'purchase' || tx.type === 'transfer')
-            .reduce((sum, tx) => sum + tx.quantity, 0);
-          
-          const available = Math.max(0, batch.harvest_quantity - soldQuantity);
-          setAvailableQuantity(available);
-        } else {
-          setAvailableQuantity(batch.harvest_quantity);
-        }
-      } catch (error) {
-        console.error('Error calculating available quantity:', error);
-        setAvailableQuantity(batch.harvest_quantity);
-      }
-    };
-
-    calculateAvailableQuantity();
+    if (batch) {
+      setAvailableQuantity(batch.harvest_quantity);
+    }
   }, [batch]);
 
   // Reset modal state when it opens - no useEffect needed
@@ -112,17 +93,33 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
     setLoading(true);
 
     try {
-      // Record the purchase transaction in supply chain
-      const currentOwner = batch.farmer || batch.current_owner || 'Unknown Farmer';
+      // Group-based system: Generate purchase certificate
+      const currentOwner = batch.farmer || 'Unknown Farmer';
       const buyerName = user.email || user.name || 'Unknown Buyer';
       
-      await createPurchaseTransaction(
-        batch.id,
-        currentOwner,
-        buyerName,
-        quantity,
-        unitPrice,
-        deliveryAddress
+      if (!batch.group_id) {
+        throw new Error('No group ID found for this batch');
+      }
+      
+      // Generate purchase certificate and add to group
+      const { pdfBlob, ipfsHash } = await properGroupManager.uploadPurchaseCertificate(
+        batch.group_id,
+        `${batch.farmer} - ${batch.crop_type} ${batch.variety}`, // Group name
+        {
+          batchId: batch.id,
+          from: currentOwner,
+          to: buyerName,
+          quantity: quantity,
+          unitPrice: unitPrice,
+          deliveryAddress: deliveryAddress,
+          productDetails: {
+            cropType: batch.crop_type,
+            variety: batch.variety,
+            harvestDate: batch.harvest_date,
+            grading: batch.grading,
+            certification: batch.certification
+          }
+        }
       );
 
       // Update batch status
@@ -145,7 +142,7 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
       onPurchaseComplete();
       toast({
         title: "Purchase Successful!",
-        description: `Your order for ${quantity}kg of ${batch.crop_type} has been placed. The certificate has been updated with your purchase details.`,
+        description: `Your order for ${quantity}kg of ${batch.crop_type} has been placed. A new certificate has been added to the group.`,
       });
     } catch (error) {
       console.error('Purchase error:', error);
