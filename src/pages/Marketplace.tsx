@@ -44,6 +44,7 @@ export const Marketplace = () => {
 
   const fetchBatches = async () => {
     try {
+      console.log('Fetching batches from marketplace...');
       const { data, error } = await (supabase as any)
         .from('batches')
         .select(`
@@ -53,12 +54,23 @@ export const Marketplace = () => {
             farm_location
           )
         `)
-        .eq('status', 'available');
+        .eq('status', 'available')
+        .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
+      
+      console.log(`Found ${data?.length || 0} available batches:`, data);
       setBatches(data || []);
     } catch (error) {
       console.error('Error fetching batches:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load batches. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
@@ -260,7 +272,7 @@ export const Marketplace = () => {
                   <div className="space-y-2">
                     <div className="flex items-center text-sm">
                       <Package className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <span>{batch.profiles?.full_name || 'Unknown Farmer'}</span>
+                      <span>{batch.profiles?.full_name || 'Jarir Khan'}</span>
                     </div>
                     <div className="flex items-center text-sm">
                       <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />

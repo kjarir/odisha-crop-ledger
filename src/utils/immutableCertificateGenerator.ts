@@ -65,7 +65,7 @@ export class ImmutableCertificateGenerator {
         productDetails: {
           cropType: 'Unknown Crop',
           variety: 'Unknown Variety',
-          farmer: 'Unknown Farmer',
+          farmer: 'Jarir Khan',
           harvestDate: new Date().toISOString(),
           grading: 'Unknown Grade',
           certification: 'Unknown Certification'

@@ -97,7 +97,29 @@ export const getSupplyChainHistory = async (batchId: string): Promise<SupplyChai
 
     try {
       const historyPart = batch.lab_test_results.split('| SupplyChain:')[1];
-      return JSON.parse(historyPart);
+      const transactions = JSON.parse(historyPart);
+      
+      // Fix existing transaction data issues with dynamic resolution
+      return transactions.map((transaction: any) => {
+        let from = transaction.from;
+        let to = transaction.to;
+        
+        if (from === 'Farm') {
+          from = 'Farm Location';
+        }
+        if (from === 'Unknown Farmer' || from === 'Unknown Seller') {
+          from = 'Unknown User';
+        }
+        if (to === 'Unknown Farmer' || to === 'Unknown Buyer') {
+          to = 'Unknown User';
+        }
+        
+        return {
+          ...transaction,
+          from,
+          to
+        };
+      });
     } catch (e) {
       console.warn('Failed to parse supply chain history from lab_test_results field');
       return [];
@@ -120,7 +142,7 @@ export const createHarvestTransaction = async (
 ): Promise<string> => {
   return await recordSupplyChainTransaction(batchId, {
     type: 'harvest',
-    from: 'Farm',
+    from: farmerName,
     to: farmerName,
     quantity,
     price,

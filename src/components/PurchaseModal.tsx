@@ -97,8 +97,35 @@ export const PurchaseModal: React.FC<PurchaseModalProps> = ({
 
     try {
       // Use the new supply chain tracking system
-      const currentOwner = batch.farmer || batch.current_owner || 'Unknown Farmer';
-      const buyerName = user.email || user.name || 'Unknown Buyer';
+      const currentOwner = batch.farmer || batch.current_owner || 'Jarir Khan';
+      
+      // Get buyer name from profile
+      let buyerName = 'Unknown Buyer';
+      try {
+        const { data: profile } = await (supabase as any)
+          .from('profiles')
+          .select('full_name')
+          .eq('user_id', user?.id)
+          .single();
+        
+        if (profile?.full_name) {
+          buyerName = profile.full_name;
+        } else if (user?.name) {
+          buyerName = user.name;
+        } else if (user?.email) {
+          // Extract name from email as fallback
+          const emailName = user.email.split('@')[0];
+          buyerName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
+        }
+      } catch (error) {
+        console.warn('Could not fetch buyer name from profile:', error);
+        if (user?.name) {
+          buyerName = user.name;
+        } else if (user?.email) {
+          const emailName = user.email.split('@')[0];
+          buyerName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
+        }
+      }
       
       await createPurchaseTransaction(
         batch.id,

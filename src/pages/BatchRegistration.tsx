@@ -99,9 +99,25 @@ export const BatchRegistration = () => {
         tempBatchId: tempBatchId.toString()
       });
       
+      // Get farmer name from profile
+      let farmerName = 'Jarir Khan';
+      try {
+        const { data: profile } = await (supabase as any)
+          .from('profiles')
+          .select('full_name')
+          .eq('user_id', user?.id)
+          .single();
+        
+        if (profile?.full_name) {
+          farmerName = profile.full_name;
+        }
+      } catch (error) {
+        console.warn('Could not fetch farmer name from profile:', error);
+      }
+
       const harvestData = {
         batchId: tempBatchId.toString(),
-        farmerName: account || 'Unknown Farmer',
+        farmerName: farmerName,
         cropType: formData.cropType || 'Unknown Crop',
         variety: formData.variety || 'Unknown Variety',
         harvestQuantity: parseFloat(formData.harvestQuantity),

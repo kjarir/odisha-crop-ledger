@@ -235,7 +235,8 @@ export class SingleStepGroupManager {
           variety: batchData.variety,
           type: 'certificate',
           groupId: groupId,
-          groupName: groupName
+          groupName: groupName,
+          farmerName: batchData.farmerName // Store farmer name for reference
         }
       };
 
@@ -279,7 +280,9 @@ export class SingleStepGroupManager {
           price: (purchaseData.quantity * purchaseData.pricePerKg).toString(),
           timestamp: purchaseData.timestamp,
           type: 'certificate',
-          groupId: groupId
+          groupId: groupId,
+          farmerName: purchaseData.from, // Store farmer name for reference
+          buyerName: purchaseData.to // Store buyer name for reference
         }
       };
 

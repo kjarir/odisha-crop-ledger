@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { ipfsService } from './ipfs';
 import { SupplyChainTransaction, TransactionChain, OwnershipRecord } from '@/types/transaction';
+import { nameResolver } from './nameResolver';
 
 /**
  * Immutable Transaction Manager
@@ -18,6 +19,45 @@ export class TransactionManager {
       TransactionManager.instance = new TransactionManager();
     }
     return TransactionManager.instance;
+  }
+
+  /**
+   * Clean up transaction data to fix existing issues
+   */
+  private cleanTransactionData(transaction: any, farmerName?: string): any {
+    let from = transaction.from;
+    let to = transaction.to;
+    
+    // Fix common issues with dynamic resolution
+    if (from === 'Farm') {
+      from = 'Farm Location';
+    }
+    if (from === 'Unknown Farmer' || from === 'Unknown Seller') {
+      from = 'Unknown User';
+    }
+    if (to === 'Unknown Farmer' || to === 'Unknown Buyer') {
+      to = 'Unknown User';
+    }
+    
+    // Special handling for harvest transactions - force farmer name in both fields
+    if (transaction.type === 'HARVEST') {
+      // If "from" is "Farm Location", replace with actual farmer name
+      if (from === 'Farm Location' && farmerName) {
+        from = farmerName;
+        console.log('🔍 DEBUG: Fixed harvest transaction from Farm Location to:', farmerName);
+      }
+      // If "to" is "Farm Location", replace with actual farmer name
+      if (to === 'Farm Location' && farmerName) {
+        to = farmerName;
+        console.log('🔍 DEBUG: Fixed harvest transaction to Farm Location to:', farmerName);
+      }
+    }
+    
+    return {
+      ...transaction,
+      from,
+      to
+    };
   }
 
   /**
@@ -175,7 +215,13 @@ export class TransactionManager {
       // First, get the batch data to find the group_id
       const { data: batch, error: batchError } = await (supabase as any)
         .from('batches')
-        .select('*')
+        .select(`
+          *,
+          profiles:farmer_id (
+            full_name,
+            farm_location
+          )
+        `)
         .eq('id', batchId)
         .single();
 
@@ -200,14 +246,109 @@ export class TransactionManager {
         // Convert group files to transaction format
         const transactions: SupplyChainTransaction[] = [];
         
+        // Get farmer name from batch data - make it truly dynamic
+        let farmerName = null;
+        console.log('🔍 DEBUG: Batch data:', batch);
+        console.log('🔍 DEBUG: Batch profiles:', batch.profiles);
+        console.log('🔍 DEBUG: Batch farmer_id:', batch.farmer_id);
+        
+        if (batch.profiles?.full_name) {
+          farmerName = batch.profiles.full_name;
+          console.log('🔍 DEBUG: Using farmer name from batch.profiles:', farmerName);
+        } else if (batch.farmer_id) {
+          // Try to get farmer name from profiles table
+          try {
+            const { data: farmerProfile } = await (supabase as any)
+              .from('profiles')
+              .select('full_name')
+              .eq('id', batch.farmer_id)
+              .single();
+            
+            if (farmerProfile?.full_name) {
+              farmerName = farmerProfile.full_name;
+              console.log('🔍 DEBUG: Using farmer name from profiles table:', farmerName);
+            }
+          } catch (error) {
+            console.warn('Could not fetch farmer profile:', error);
+          }
+        }
+        
+        // If still no farmer name found, try to get from user_id
+        if (!farmerName && batch.user_id) {
+          try {
+            const { data: userProfile } = await (supabase as any)
+              .from('profiles')
+              .select('full_name')
+              .eq('user_id', batch.user_id)
+              .single();
+            
+            if (userProfile?.full_name) {
+              farmerName = userProfile.full_name;
+              console.log('🔍 DEBUG: Using farmer name from user_id:', farmerName);
+            }
+          } catch (error) {
+            console.warn('Could not fetch user profile:', error);
+          }
+        }
+        
+        console.log('🔍 DEBUG: Final farmer name:', farmerName);
+        
         for (const file of groupFiles || []) {
+          // Parse metadata if it's a string
+          let parsedMetadata = file.metadata;
+          if (typeof file.metadata === 'string') {
+            try {
+              parsedMetadata = JSON.parse(file.metadata);
+            } catch (e) {
+              console.warn('Failed to parse metadata:', file.metadata);
+              parsedMetadata = {};
+            }
+          }
+          
+          // Get identifiers from metadata
+          const fromIdentifier = parsedMetadata?.from || parsedMetadata?.keyvalues?.from;
+          const toIdentifier = parsedMetadata?.to || parsedMetadata?.keyvalues?.to;
+          const storedFarmerName = parsedMetadata?.farmerName || parsedMetadata?.keyvalues?.farmerName;
+          const storedBuyerName = parsedMetadata?.buyerName || parsedMetadata?.keyvalues?.buyerName;
+          
+          // Resolve names dynamically from stored data and database
+          let fromName = null;
+          let toName = null;
+          
+          if (file.transaction_type === 'HARVEST') {
+            // For harvest transactions: Farmer harvests and owns the crop
+            fromName = storedFarmerName || farmerName || await nameResolver.resolveName(fromIdentifier || 'Unknown Farmer');
+            toName = storedFarmerName || farmerName || await nameResolver.resolveName(toIdentifier || 'Unknown Farmer');
+            console.log('🔍 DEBUG: HARVEST transaction - fromName:', fromName, 'toName:', toName);
+          } else if (file.transaction_type === 'PURCHASE') {
+            // For purchase transactions: Get actual seller and buyer names
+            fromName = storedFarmerName || farmerName || await nameResolver.resolveName(fromIdentifier || 'Unknown Seller');
+            toName = storedBuyerName || await nameResolver.resolveName(toIdentifier || 'Unknown Buyer');
+            console.log('🔍 DEBUG: PURCHASE transaction - fromName:', fromName, 'toName:', toName);
+            console.log('🔍 DEBUG: storedFarmerName:', storedFarmerName, 'farmerName:', farmerName);
+            console.log('🔍 DEBUG: storedBuyerName:', storedBuyerName, 'toIdentifier:', toIdentifier);
+          } else {
+            // For other transactions, use name resolver for both
+            fromName = await nameResolver.resolveName(fromIdentifier || 'Unknown');
+            toName = await nameResolver.resolveName(toIdentifier || 'Unknown');
+            console.log('🔍 DEBUG: OTHER transaction - fromName:', fromName, 'toName:', toName);
+          }
+          
+          // Ensure we have valid names - fallback to dynamic resolution if needed
+          if (!fromName || fromName === 'Unknown' || fromName === 'Unknown Farmer') {
+            fromName = farmerName || 'Unknown User';
+          }
+          if (!toName || toName === 'Unknown' || toName === 'Unknown Farmer') {
+            toName = farmerName || 'Unknown User';
+          }
+          
           const transaction: SupplyChainTransaction = {
             transactionId: file.id,
             type: file.transaction_type as SupplyChainTransaction['type'],
-            from: file.metadata?.from || 'Unknown',
-            to: file.metadata?.to || 'Unknown',
-            quantity: parseInt(file.metadata?.quantity || '0'),
-            price: parseFloat(file.metadata?.price || '0'),
+            from: fromName,
+            to: toName,
+            quantity: parseInt(parsedMetadata?.quantity || parsedMetadata?.keyvalues?.quantity || '0'),
+            price: parseFloat(parsedMetadata?.price || parsedMetadata?.keyvalues?.price || '0'),
             timestamp: file.created_at,
             previousTransactionHash: undefined,
             batchId: file.batch_id || batchId,
@@ -216,12 +357,14 @@ export class TransactionManager {
               variety: batch.variety,
               grading: batch.grading
             },
-            metadata: file.metadata,
+            metadata: parsedMetadata,
             ipfsHash: file.ipfs_hash,
             blockchainHash: undefined
           };
           
-          transactions.push(transaction);
+          // Clean up the transaction data before adding
+          const cleanedTransaction = this.cleanTransactionData(transaction, farmerName);
+          transactions.push(cleanedTransaction);
         }
 
         console.log(`Found ${transactions.length} transactions for batch ${batchId}`);
@@ -270,15 +413,43 @@ export class TransactionManager {
         };
       }
 
+      // Get farmer name for cleanup
+      let farmerName = null;
+      try {
+        const { data: batch } = await (supabase as any)
+          .from('batches')
+          .select('profiles(full_name), farmer_id, user_id')
+          .eq('id', batchId)
+          .single();
+        
+        if (batch?.profiles?.full_name) {
+          farmerName = batch.profiles.full_name;
+        } else if (batch?.farmer_id) {
+          const { data: farmerProfile } = await (supabase as any)
+            .from('profiles')
+            .select('full_name')
+            .eq('id', batch.farmer_id)
+            .single();
+          if (farmerProfile?.full_name) {
+            farmerName = farmerProfile.full_name;
+          }
+        }
+      } catch (error) {
+        console.warn('Could not fetch farmer name for transaction cleanup:', error);
+      }
+
+      // Final cleanup of all transactions
+      const cleanedTransactions = transactions.map(transaction => this.cleanTransactionData(transaction, farmerName));
+
       // Calculate current ownership
       const currentOwners: { [owner: string]: { quantity: number; lastTransaction: string } } = {};
       let totalQuantity = 0;
       let availableQuantity = 0;
 
       // Process transactions in order
-      for (const transaction of transactions) {
+      for (const transaction of cleanedTransactions) {
         if (transaction.type === 'HARVEST') {
-          // Initial harvest - farmer owns everything
+          // Initial harvest - farmer owns everything (farmer is the "to" field)
           currentOwners[transaction.to] = {
             quantity: transaction.quantity,
             lastTransaction: transaction.transactionId
@@ -309,7 +480,7 @@ export class TransactionManager {
 
       return {
         batchId,
-        transactions,
+        transactions: cleanedTransactions,
         currentOwners,
         totalQuantity,
         availableQuantity: Math.max(0, availableQuantity)
@@ -330,6 +501,7 @@ export class TransactionManager {
 
       for (const transaction of chain.transactions) {
         if (transaction.type === 'HARVEST' || transaction.type === 'PURCHASE' || transaction.type === 'TRANSFER') {
+          // For all transactions, the "to" field becomes the owner
           ownershipHistory.push({
             owner: transaction.to,
             quantity: transaction.quantity,
@@ -351,7 +523,7 @@ export class TransactionManager {
    * Map database record to transaction object
    */
   private mapDatabaseToTransaction(data: any): SupplyChainTransaction {
-    return {
+    const transaction = {
       transactionId: data.transaction_id,
       type: data.type,
       from: data.from_address,
@@ -366,6 +538,9 @@ export class TransactionManager {
       ipfsHash: data.ipfs_hash,
       blockchainHash: data.blockchain_hash
     };
+    
+    // Clean up the transaction data
+    return this.cleanTransactionData(transaction);
   }
 
   /**

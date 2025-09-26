@@ -155,6 +155,7 @@ export async function verifyCertificateByBatchId(batchId: string): Promise<Verif
     // Verify IPFS hash if available
     if (batch.ipfsHash || batch.group_id) {
       const hashToVerify = batch.group_id || batch.ipfsHash;
+      console.log('Verifying hash:', hashToVerify);
       const ipfsResult = await verifyCertificateByHash(hashToVerify);
       
       if (!ipfsResult.isValid) {
@@ -199,56 +200,22 @@ export async function verifyCertificateByGroupId(groupId: string): Promise<Verif
   try {
     console.log('Verifying certificate for group ID:', groupId);
     
-    // Fetch batch data from database using group ID
-    const { data: batch, error } = await supabase
+    // First try to find batch with this group_id
+    const { data: batch, error: batchError } = await supabase
       .from('batches')
       .select('*')
       .eq('group_id', groupId)
       .single();
     
-    if (error) {
-      return {
-        isValid: false,
-        error: `Database error: ${error.message}`,
-        timestamp: new Date().toISOString()
-      };
+    if (!batchError && batch) {
+      console.log('Found batch with group_id:', batch);
+      // Use the batch verification logic
+      return await verifyCertificateByBatchId(batch.id);
     }
     
-    if (!batch) {
-      return {
-        isValid: false,
-        error: 'Batch not found for this group ID',
-        timestamp: new Date().toISOString()
-      };
-    }
-    
-    // Verify IPFS hash
-    const ipfsResult = await verifyCertificateByHash(groupId);
-    
-    if (!ipfsResult.isValid) {
-      return ipfsResult;
-    }
-    
-    const certificateData: CertificateData = {
-      id: batch.id,
-      batchId: batch.id,
-      farmer: batch.farmer,
-      crop: batch.crop_type,
-      variety: batch.variety,
-      harvestQuantity: batch.harvest_quantity,
-      harvestDate: batch.harvest_date,
-      grading: batch.grading,
-      certification: batch.certification,
-      ipfsHash: batch.ipfsHash || batch.group_id || '',
-      groupId: batch.group_id,
-      createdAt: batch.created_at
-    };
-    
-    return {
-      isValid: true,
-      certificate: certificateData,
-      timestamp: new Date().toISOString()
-    };
+    // If no batch found, try to verify the group ID directly as IPFS hash
+    console.log('No batch found with group_id, trying direct IPFS verification...');
+    return await verifyCertificateByHash(groupId);
   } catch (error) {
     console.error('Error verifying certificate by group ID:', error);
     return {
@@ -309,25 +276,40 @@ export async function verifyCertificateWithDatabaseFallback(batchIdOrHash: strin
   try {
     console.log('Verifying certificate with database fallback for:', batchIdOrHash);
     
+    const input = batchIdOrHash.toString();
+    
     // If it's a number, treat it as batch ID
     if (typeof batchIdOrHash === 'number' || !isNaN(Number(batchIdOrHash))) {
-      const batchId = batchIdOrHash.toString();
+      const batchId = input;
       console.log('Treating as batch ID:', batchId);
       
       // Get batch data from database
-      const { data: batch, error } = await supabase
+      let { data: batch, error } = await supabase
         .from('batches')
         .select('*')
         .eq('id', batchId)
         .single();
       
       if (error || !batch) {
-        return {
-          isValid: false,
-          errors: [`Batch not found with ID: ${batchId}`],
-          warnings: [],
-          timestamp: new Date().toISOString()
-        };
+        // Try to find batch by group_id if not found by ID
+        console.log('Batch not found by ID, trying group_id lookup...');
+        const { data: batchByGroup, error: groupError } = await supabase
+          .from('batches')
+          .select('*')
+          .eq('group_id', input)
+          .single();
+        
+        if (groupError || !batchByGroup) {
+          return {
+            isValid: false,
+            errors: [`Batch not found with ID or group ID: ${input}`],
+            warnings: [],
+            timestamp: new Date().toISOString()
+          };
+        }
+        
+        // Use the batch found by group_id
+        batch = batchByGroup;
       }
       
       // If batch has IPFS hash or group_id, verify it

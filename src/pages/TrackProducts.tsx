@@ -87,7 +87,7 @@ export const TrackProducts = () => {
         // Transform batch data to match the expected format
         const enhancedBatchData = {
           id: batch.id?.toString() || 'Unknown',
-          farmer: batch.farmer || 'Unknown Farmer',
+          farmer: batch.farmer || 'Jarir Khan',
           crop: batch.crop_type || 'Unknown Crop',
           variety: batch.variety || 'Unknown Variety',
           harvestQuantity: batch.harvest_quantity?.toString() || '0',
