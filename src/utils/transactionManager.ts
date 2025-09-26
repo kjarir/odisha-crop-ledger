@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { IPFSService } from './ipfs';
+import { ipfsService } from './ipfs';
 import { SupplyChainTransaction, TransactionChain, OwnershipRecord } from '@/types/transaction';
 
 /**
@@ -8,10 +8,9 @@ import { SupplyChainTransaction, TransactionChain, OwnershipRecord } from '@/typ
  */
 export class TransactionManager {
   private static instance: TransactionManager;
-  private ipfsService: IPFSService;
 
   private constructor() {
-    this.ipfsService = IPFSService.getInstance();
+    // No need to store ipfsService instance as it's already a singleton
   }
 
   public static getInstance(): TransactionManager {
@@ -57,8 +56,12 @@ export class TransactionManager {
       };
 
       // Upload transaction to IPFS
-      const ipfsResponse = await this.ipfsService.uploadJSON(
-        transaction,
+      const transactionBlob = new Blob([JSON.stringify(transaction, null, 2)], {
+        type: 'application/json'
+      });
+      
+      const ipfsResponse = await ipfsService.uploadFile(
+        transactionBlob,
         `transaction_${transactionId}.json`,
         {
           name: `Transaction ${transactionId}`,
@@ -163,25 +166,86 @@ export class TransactionManager {
   }
 
   /**
-   * Get all transactions for a batch
+   * Get all transactions for a batch using group-based system
    */
   public async getBatchTransactions(batchId: string): Promise<SupplyChainTransaction[]> {
     try {
-      const { data, error } = await (supabase as any)
-        .from('transactions')
+      console.log('Getting batch transactions for batch:', batchId);
+      
+      // First, get the batch data to find the group_id
+      const { data: batch, error: batchError } = await (supabase as any)
+        .from('batches')
         .select('*')
-        .eq('batch_id', batchId)
-        .order('transaction_timestamp', { ascending: true });
+        .eq('id', batchId)
+        .single();
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          console.warn('Transactions table does not exist. Please run the database migration.');
-          return [];
-        }
-        throw error;
+      if (batchError || !batch) {
+        console.warn('Batch not found:', batchId);
+        return [];
       }
 
-      return data.map((item: any) => this.mapDatabaseToTransaction(item));
+      // If batch has a group_id, get files from group_files table
+      if (batch.group_id) {
+        const { data: groupFiles, error: groupError } = await (supabase as any)
+          .from('group_files')
+          .select('*')
+          .eq('group_id', batch.group_id)
+          .order('created_at', { ascending: true });
+
+        if (groupError) {
+          console.error('Error fetching group files:', groupError);
+          return [];
+        }
+
+        // Convert group files to transaction format
+        const transactions: SupplyChainTransaction[] = [];
+        
+        for (const file of groupFiles || []) {
+          const transaction: SupplyChainTransaction = {
+            transactionId: file.id,
+            type: file.transaction_type as SupplyChainTransaction['type'],
+            from: file.metadata?.from || 'Unknown',
+            to: file.metadata?.to || 'Unknown',
+            quantity: parseInt(file.metadata?.quantity || '0'),
+            price: parseFloat(file.metadata?.price || '0'),
+            timestamp: file.created_at,
+            previousTransactionHash: undefined,
+            batchId: file.batch_id || batchId,
+            productDetails: {
+              crop: batch.crop_type,
+              variety: batch.variety,
+              grading: batch.grading
+            },
+            metadata: file.metadata,
+            ipfsHash: file.ipfs_hash,
+            blockchainHash: undefined
+          };
+          
+          transactions.push(transaction);
+        }
+
+        console.log(`Found ${transactions.length} transactions for batch ${batchId}`);
+        return transactions;
+      }
+
+      // Fallback: try to get from transactions table if it exists
+      try {
+        const { data, error } = await (supabase as any)
+          .from('transactions')
+          .select('*')
+          .eq('batch_id', batchId)
+          .order('transaction_timestamp', { ascending: true });
+
+        if (error) {
+          console.warn('Transactions table not available, returning empty array for batch:', batchId);
+          return [];
+        }
+
+        return (data || []).map((record: any) => this.mapDatabaseToTransaction(record));
+      } catch (error) {
+        console.warn('Transactions table not available in group-based system, returning empty array for batch:', batchId);
+        return [];
+      }
     } catch (error) {
       console.error('Error getting batch transactions:', error);
       return [];

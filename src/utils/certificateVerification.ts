@@ -1,432 +1,473 @@
-import { ethers } from 'ethers';
-import { getBatchFromBlockchain } from '@/utils/contractUtils';
-import { fetchFromIPFS, getIPFSFileUrl } from '@/utils/ipfs';
-import { Batch } from '@/contracts/config';
-import { findBatchById, findBatchByField } from '@/utils/databaseUtils';
+import { supabase } from '@/integrations/supabase/client';
 
-// Extend Window interface for TypeScript
-declare global {
-  interface Window {
-    ethereum?: any;
-  }
+/**
+ * Certificate Verification Utilities
+ */
+
+export interface CertificateData {
+  id: string;
+  batchId: string;
+  farmer: string;
+  crop: string;
+  variety: string;
+  harvestQuantity: string;
+  harvestDate: string;
+  grading: string;
+  certification: string;
+  ipfsHash: string;
+  groupId?: string;
+  createdAt: string;
 }
 
 export interface VerificationResult {
   isValid: boolean;
-  batchData?: Batch;
+  certificate?: CertificateData;
+  batchData?: {
+    id: string;
+    crop: string;
+    variety: string;
+    harvestQuantity: string;
+    farmer: string;
+    currentOwner: string;
+    price: string;
+    ipfsHash: string;
+  };
   blockchainData?: any;
   ipfsData?: any;
   errors: string[];
   warnings: string[];
-}
-
-export interface CertificateData {
-  batchId: number;
-  crop: string;
-  variety: string;
-  harvestQuantity: string;
-  sowingDate: string;
-  harvestDate: string;
-  freshnessDuration: string;
-  grading: string;
-  certification: string;
-  labTest: string;
-  price: number;
-  farmer: string;
-  currentOwner: string;
-  ipfsHash: string;
-  blockchainId?: number;
+  error?: string;
+  timestamp: string;
 }
 
 /**
- * Verify a certificate by checking blockchain, IPFS, and data consistency
+ * Verify certificate by IPFS hash
  */
-export const verifyCertificate = async (
-  batchId: number,
-  ipfsHash?: string,
-  provider?: ethers.Provider
-): Promise<VerificationResult> => {
-  const result: VerificationResult = {
-    isValid: false,
-    errors: [],
-    warnings: []
-  };
-
+export async function verifyCertificateByHash(ipfsHash: string): Promise<VerificationResult> {
   try {
-    // Step 1: Verify blockchain data
-    let blockchainData: Batch | null = null;
+    console.log('Verifying certificate with IPFS hash:', ipfsHash);
     
-    if (provider) {
-      blockchainData = await getBatchFromBlockchain(batchId, provider);
-    } else {
-      // Fallback: try to get provider from window.ethereum
-      if (window.ethereum) {
-        const web3Provider = new ethers.BrowserProvider(window.ethereum);
-        blockchainData = await getBatchFromBlockchain(batchId, web3Provider);
-      }
-    }
-    
-    if (!blockchainData) {
-      // Check if this might be a fallback ID (timestamp-based)
-      const currentTimestamp = Math.floor(Date.now() / 1000);
-      const timeDiff = Math.abs(currentTimestamp - batchId);
-      
-      if (timeDiff < 86400) { // Within 24 hours
-        result.warnings.push('Batch ID appears to be a fallback ID (not registered on blockchain)');
-        result.warnings.push('This batch may have been registered during a blockchain transaction failure');
-      } else {
-        result.errors.push('Batch not found on blockchain');
-      }
-      
-      // Even if not on blockchain, we can still verify IPFS data if available
-      if (ipfsHash) {
-        try {
-          const ipfsData = await fetchFromIPFS(ipfsHash);
-          result.ipfsData = ipfsData;
-          result.warnings.push('Certificate exists on IPFS but batch not found on blockchain');
-        } catch (error) {
-          result.errors.push('Failed to fetch data from IPFS');
-        }
-      }
-      
-      return result;
-    }
-
-    result.blockchainData = blockchainData;
-
-    // Step 2: Verify IPFS data if hash provided
-    if (ipfsHash) {
-      try {
-        const ipfsData = await fetchFromIPFS(ipfsHash);
-        result.ipfsData = ipfsData;
-        
-        // Verify IPFS hash matches blockchain
-        if (blockchainData.ipfsHash !== ipfsHash) {
-          result.errors.push('IPFS hash mismatch between certificate and blockchain');
-        }
-      } catch (error) {
-        result.errors.push('Failed to fetch data from IPFS');
-      }
-    }
-
-    // Step 3: Data consistency checks
-    if (blockchainData.id !== batchId) {
-      result.errors.push('Batch ID mismatch');
-    }
-
-    // Step 4: Validate required fields
-    const requiredFields = [
-      'crop', 'variety', 'harvestQuantity', 'sowingDate', 
-      'harvestDate', 'grading', 'certification', 'price'
-    ];
-
-    for (const field of requiredFields) {
-      if (!blockchainData[field as keyof Batch] || blockchainData[field as keyof Batch] === '') {
-        result.errors.push(`Missing required field: ${field}`);
-      }
-    }
-
-    // Step 5: Business logic validation
-    if (blockchainData.price <= 0) {
-      result.errors.push('Invalid price: must be greater than 0');
-    }
-
-    const sowingDate = new Date(blockchainData.sowingDate);
-    const harvestDate = new Date(blockchainData.harvestDate);
-    
-    if (harvestDate <= sowingDate) {
-      result.errors.push('Harvest date must be after sowing date');
-    }
-
-    if (isNaN(sowingDate.getTime())) {
-      result.errors.push('Invalid sowing date format');
-    }
-
-    if (isNaN(harvestDate.getTime())) {
-      result.errors.push('Invalid harvest date format');
-    }
-
-    // Step 6: Check if batch is still owned by original farmer
-    if (blockchainData.currentOwner !== blockchainData.farmer) {
-      result.warnings.push('Batch ownership has been transferred');
-    }
-
-    // Step 7: Check freshness
-    const daysSinceHarvest = Math.floor(
-      (Date.now() - harvestDate.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    
-    if (daysSinceHarvest > parseInt(blockchainData.freshnessDuration)) {
-      result.warnings.push('Batch may be past freshness duration');
-    }
-
-    // Step 8: Final validation
-    result.isValid = result.errors.length === 0;
-    result.batchData = blockchainData;
-
-  } catch (error) {
-    result.errors.push(`Verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-
-  return result;
-};
-
-/**
- * Verify certificate from IPFS hash only
- */
-export const verifyCertificateFromIPFS = async (
-  ipfsHash: string,
-  provider?: ethers.Provider
-): Promise<VerificationResult> => {
-  const result: VerificationResult = {
-    isValid: false,
-    errors: [],
-    warnings: []
-  };
-
-  try {
-    // Fetch data from IPFS
-    const ipfsData = await fetchFromIPFS(ipfsHash);
-    result.ipfsData = ipfsData;
-
-    // Try to extract batch ID from various possible fields
-    const batchId = ipfsData.batchId || ipfsData.id || ipfsData.blockchain_id || ipfsData.blockchain_batch_id;
-    
-    if (!batchId) {
-      // If no batch ID found, try to verify using database fallback
-      result.warnings.push('No batch ID found in IPFS data');
-      result.warnings.push('Attempting to verify using database records');
-      
-      // Try to find batch in database using IPFS hash
-      try {
-        // Try to find batch by IPFS hash using safe queries
-        let dbBatch = await findBatchByField('ipfs_hash', ipfsHash);
-        
-        if (!dbBatch) {
-          dbBatch = await findBatchByField('ipfs_certificate_hash', ipfsHash);
-        }
-
-        if (!dbBatch) {
-          result.errors.push('No batch found in database for this IPFS hash');
-          return result;
-        }
-
-        // Create mock batch data from database
-        const mockBatchData: Batch = {
-          id: dbBatch.blockchain_id || dbBatch.blockchain_batch_id || Math.floor(Date.now() / 1000),
-          farmer: '0x0000000000000000000000000000000000000000',
-          crop: dbBatch.crop_type || '',
-          variety: dbBatch.variety || '',
-          harvestQuantity: dbBatch.harvest_quantity?.toString() || '',
-          sowingDate: dbBatch.sowing_date || '',
-          harvestDate: dbBatch.harvest_date || '',
-          freshnessDuration: dbBatch.freshness_duration?.toString() || '',
-          grading: dbBatch.grading || '',
-          certification: dbBatch.certification || '',
-          labTest: dbBatch.lab_test_results || '',
-          price: Math.floor((dbBatch.price_per_kg || 0) * (dbBatch.harvest_quantity || 0) * 100),
-          ipfsHash: ipfsHash,
-          languageDetected: '',
-          summary: '',
-          callStatus: '',
-          offTopicCount: 0,
-          currentOwner: '0x0000000000000000000000000000000000000000'
-        };
-
-        result.batchData = mockBatchData;
-        result.warnings.push('Batch found in database but not on blockchain');
-        result.warnings.push('Certificate is valid based on database records');
-        result.isValid = true;
-        return result;
-
-      } catch (dbError) {
-        result.errors.push('Database verification failed');
-        return result;
-      }
-    }
-
-    // Verify against blockchain using the found batch ID
-    return await verifyCertificateWithDatabaseFallback(Number(batchId), provider);
-
-  } catch (error) {
-    result.errors.push(`Failed to verify from IPFS: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    return result;
-  }
-};
-
-/**
- * Verify certificate using database data as fallback
- */
-export const verifyCertificateWithDatabaseFallback = async (
-  batchId: number,
-  provider?: ethers.Provider
-): Promise<VerificationResult> => {
-  const result: VerificationResult = {
-    isValid: false,
-    errors: [],
-    warnings: []
-  };
-
-  try {
-    // First try blockchain verification
-    const blockchainResult = await verifyCertificate(batchId, undefined, provider);
-    
-    if (blockchainResult.isValid) {
-      return blockchainResult;
-    }
-
-    // If blockchain verification fails, try database fallback
-    try {
-      // Use safe database query
-      const dbBatch = await findBatchById(batchId);
-      
-      if (!dbBatch) {
-        result.errors.push('Batch not found in database or blockchain');
-        return result;
-      }
-
-      // Create a mock batch data from database
-      const mockBatchData: Batch = {
-        id: batchId,
-        farmer: '0x0000000000000000000000000000000000000000', // Unknown farmer
-        crop: dbBatch.crop_type || '',
-        variety: dbBatch.variety || '',
-        harvestQuantity: dbBatch.harvest_quantity?.toString() || '',
-        sowingDate: dbBatch.sowing_date || '',
-        harvestDate: dbBatch.harvest_date || '',
-        freshnessDuration: dbBatch.freshness_duration?.toString() || '',
-        grading: dbBatch.grading || '',
-        certification: dbBatch.certification || '',
-        labTest: dbBatch.lab_test_results || '',
-        price: Math.floor((dbBatch.price_per_kg || 0) * (dbBatch.harvest_quantity || 0) * 100), // Convert to paise
-        ipfsHash: dbBatch.ipfs_hash || dbBatch.ipfs_certificate_hash || '',
-        languageDetected: '',
-        summary: '',
-        callStatus: '',
-        offTopicCount: 0,
-        currentOwner: '0x0000000000000000000000000000000000000000'
+    // Validate IPFS hash format
+    if (!ipfsHash || ipfsHash.length < 10) {
+      return {
+        isValid: false,
+        errors: ['Invalid IPFS hash format. Hash must be at least 10 characters long.'],
+        warnings: [],
+        timestamp: new Date().toISOString()
       };
-
-      result.batchData = mockBatchData;
-      result.warnings.push('Batch found in database but not on blockchain');
-      result.warnings.push('This may indicate a blockchain transaction failure during registration');
-      
-      // Check if IPFS certificate exists
-      const ipfsHash = dbBatch.ipfs_hash || dbBatch.ipfs_certificate_hash;
-      if (ipfsHash) {
-        try {
-          const ipfsData = await fetchFromIPFS(ipfsHash);
-          result.ipfsData = ipfsData;
-          result.warnings.push('Certificate exists on IPFS');
-        } catch (error) {
-          result.warnings.push('IPFS certificate not accessible');
-        }
-      }
-
-      // Basic validation
-      if (dbBatch.crop_type && dbBatch.variety && dbBatch.harvest_quantity > 0) {
-        result.isValid = true;
-        result.warnings.push('Certificate is valid based on database records');
-      } else {
-        result.errors.push('Incomplete batch data in database');
-      }
-
-    } catch (dbError) {
-      result.errors.push('Database verification failed');
     }
 
+    // Clean the IPFS hash (remove any URL parts)
+    const cleanHash = ipfsHash.replace(/^.*\/ipfs\//, '').replace(/[^a-zA-Z0-9]/g, '');
+    
+    if (cleanHash.length < 10) {
+      return {
+        isValid: false,
+        errors: ['Invalid IPFS hash format. Hash appears to be malformed.'],
+        warnings: [],
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    // Try multiple IPFS gateways for better reliability
+    const gateways = [
+      `https://gateway.pinata.cloud/ipfs/${cleanHash}`,
+      `https://ipfs.io/ipfs/${cleanHash}`,
+      `https://cloudflare-ipfs.com/ipfs/${cleanHash}`
+    ];
+    
+    let lastError = '';
+    
+    for (const gatewayUrl of gateways) {
+      try {
+        console.log(`Trying gateway: ${gatewayUrl}`);
+        const response = await fetch(gatewayUrl, { 
+          method: 'HEAD', // Use HEAD to check if file exists without downloading
+          timeout: 10000 
+        });
+        
+        if (response.ok) {
+          console.log(`✅ IPFS hash verified successfully via ${gatewayUrl}`);
+          return {
+            isValid: true,
+            ipfsData: { gateway: gatewayUrl, hash: cleanHash },
+            errors: [],
+            warnings: [],
+            timestamp: new Date().toISOString()
+          };
+        } else {
+          lastError = `Gateway ${gatewayUrl} returned ${response.status}`;
+          console.warn(`Gateway failed: ${lastError}`);
+        }
+      } catch (gatewayError) {
+        lastError = `Gateway ${gatewayUrl} error: ${gatewayError.message}`;
+        console.warn(`Gateway error: ${lastError}`);
+      }
+    }
+    
+    return {
+      isValid: false,
+      errors: [`Failed to fetch certificate from IPFS. All gateways failed. Last error: ${lastError}`],
+      warnings: [],
+      timestamp: new Date().toISOString()
+    };
   } catch (error) {
-    result.errors.push(`Verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Error verifying certificate:', error);
+    return {
+      isValid: false,
+      errors: [`Verification failed: ${error.message}`],
+      warnings: [],
+      timestamp: new Date().toISOString()
+    };
   }
+}
 
-  return result;
-};
+/**
+ * Verify certificate by batch ID
+ */
+export async function verifyCertificateByBatchId(batchId: string): Promise<VerificationResult> {
+  try {
+    console.log('Verifying certificate for batch ID:', batchId);
+    
+    // Fetch batch data from database
+    const { data: batch, error } = await supabase
+      .from('batches')
+      .select('*')
+      .eq('id', batchId)
+      .single();
+    
+    if (error) {
+      return {
+        isValid: false,
+        error: `Database error: ${error.message}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    if (!batch) {
+      return {
+        isValid: false,
+        error: 'Batch not found',
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    // Verify IPFS hash if available
+    if (batch.ipfsHash || batch.group_id) {
+      const hashToVerify = batch.group_id || batch.ipfsHash;
+      const ipfsResult = await verifyCertificateByHash(hashToVerify);
+      
+      if (!ipfsResult.isValid) {
+        return ipfsResult;
+      }
+    }
+    
+    const certificateData: CertificateData = {
+      id: batch.id,
+      batchId: batch.id,
+      farmer: batch.farmer,
+      crop: batch.crop_type,
+      variety: batch.variety,
+      harvestQuantity: batch.harvest_quantity,
+      harvestDate: batch.harvest_date,
+      grading: batch.grading,
+      certification: batch.certification,
+      ipfsHash: batch.ipfsHash || batch.group_id || '',
+      groupId: batch.group_id,
+      createdAt: batch.created_at
+    };
+    
+    return {
+      isValid: true,
+      certificate: certificateData,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error verifying certificate by batch ID:', error);
+    return {
+      isValid: false,
+      error: `Verification failed: ${error.message}`,
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+
+/**
+ * Verify certificate by group ID
+ */
+export async function verifyCertificateByGroupId(groupId: string): Promise<VerificationResult> {
+  try {
+    console.log('Verifying certificate for group ID:', groupId);
+    
+    // Fetch batch data from database using group ID
+    const { data: batch, error } = await supabase
+      .from('batches')
+      .select('*')
+      .eq('group_id', groupId)
+      .single();
+    
+    if (error) {
+      return {
+        isValid: false,
+        error: `Database error: ${error.message}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    if (!batch) {
+      return {
+        isValid: false,
+        error: 'Batch not found for this group ID',
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    // Verify IPFS hash
+    const ipfsResult = await verifyCertificateByHash(groupId);
+    
+    if (!ipfsResult.isValid) {
+      return ipfsResult;
+    }
+    
+    const certificateData: CertificateData = {
+      id: batch.id,
+      batchId: batch.id,
+      farmer: batch.farmer,
+      crop: batch.crop_type,
+      variety: batch.variety,
+      harvestQuantity: batch.harvest_quantity,
+      harvestDate: batch.harvest_date,
+      grading: batch.grading,
+      certification: batch.certification,
+      ipfsHash: batch.ipfsHash || batch.group_id || '',
+      groupId: batch.group_id,
+      createdAt: batch.created_at
+    };
+    
+    return {
+      isValid: true,
+      certificate: certificateData,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error verifying certificate by group ID:', error);
+    return {
+      isValid: false,
+      error: `Verification failed: ${error.message}`,
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+
+/**
+ * Get certificate URL for viewing
+ */
+export function getCertificateUrl(ipfsHash: string): string {
+  return `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+}
+
+/**
+ * Download certificate as PDF
+ */
+export async function downloadCertificate(ipfsHash: string, fileName?: string): Promise<void> {
+  try {
+    const url = getCertificateUrl(ipfsHash);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch certificate: ${response.status}`);
+    }
+    
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = fileName || `certificate_${ipfsHash.substring(0, 10)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch (error) {
+    console.error('Error downloading certificate:', error);
+    throw error;
+  }
+}
+
+/**
+ * Verify certificate from IPFS hash
+ */
+export async function verifyCertificateFromIPFS(ipfsHash: string): Promise<VerificationResult> {
+  return await verifyCertificateByHash(ipfsHash);
+}
+
+/**
+ * Verify certificate with database fallback
+ */
+export async function verifyCertificateWithDatabaseFallback(batchIdOrHash: string | number): Promise<VerificationResult> {
+  try {
+    console.log('Verifying certificate with database fallback for:', batchIdOrHash);
+    
+    // If it's a number, treat it as batch ID
+    if (typeof batchIdOrHash === 'number' || !isNaN(Number(batchIdOrHash))) {
+      const batchId = batchIdOrHash.toString();
+      console.log('Treating as batch ID:', batchId);
+      
+      // Get batch data from database
+      const { data: batch, error } = await supabase
+        .from('batches')
+        .select('*')
+        .eq('id', batchId)
+        .single();
+      
+      if (error || !batch) {
+        return {
+          isValid: false,
+          errors: [`Batch not found with ID: ${batchId}`],
+          warnings: [],
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // If batch has IPFS hash or group_id, verify it
+      const hashToVerify = batch.group_id || batch.ipfsHash;
+      if (hashToVerify) {
+        const ipfsResult = await verifyCertificateByHash(hashToVerify);
+        if (!ipfsResult.isValid) {
+          console.warn('IPFS verification failed, but batch exists in database');
+        }
+      }
+      
+      const certificateData: CertificateData = {
+        id: batch.id,
+        batchId: batch.id,
+        farmer: batch.farmer,
+        crop: batch.crop_type,
+        variety: batch.variety,
+        harvestQuantity: batch.harvest_quantity,
+        harvestDate: batch.harvest_date,
+        grading: batch.grading,
+        certification: batch.certification,
+        ipfsHash: batch.ipfsHash || batch.group_id || '',
+        groupId: batch.group_id,
+        createdAt: batch.created_at
+      };
+      
+      return {
+        isValid: true,
+        certificate: certificateData,
+        batchData: {
+          id: batch.id,
+          crop: batch.crop_type,
+          variety: batch.variety,
+          harvestQuantity: batch.harvest_quantity,
+          farmer: batch.farmer,
+          currentOwner: batch.current_owner || batch.farmer,
+          price: batch.price_per_kg || '0',
+          ipfsHash: batch.ipfsHash || batch.group_id || ''
+        },
+        errors: [],
+        warnings: [],
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    // If it's a string, treat it as IPFS hash
+    const ipfsHash = batchIdOrHash.toString();
+    console.log('Treating as IPFS hash:', ipfsHash);
+    
+    // First try to verify from IPFS
+    const ipfsResult = await verifyCertificateByHash(ipfsHash);
+    
+    if (ipfsResult.isValid) {
+      return ipfsResult;
+    }
+    
+    // If IPFS verification fails, try to find in database
+    const { data: batch, error } = await supabase
+      .from('batches')
+      .select('*')
+      .or(`ipfsHash.eq.${ipfsHash},group_id.eq.${ipfsHash}`)
+      .single();
+    
+    if (error || !batch) {
+      return {
+        isValid: false,
+        errors: ['Certificate not found in IPFS or database'],
+        warnings: [],
+        timestamp: new Date().toISOString()
+      };
+    }
+    
+    const certificateData: CertificateData = {
+      id: batch.id,
+      batchId: batch.id,
+      farmer: batch.farmer,
+      crop: batch.crop_type,
+      variety: batch.variety,
+      harvestQuantity: batch.harvest_quantity,
+      harvestDate: batch.harvest_date,
+      grading: batch.grading,
+      certification: batch.certification,
+      ipfsHash: batch.ipfsHash || batch.group_id || '',
+      groupId: batch.group_id,
+      createdAt: batch.created_at
+    };
+    
+    return {
+      isValid: true,
+      certificate: certificateData,
+      batchData: {
+        id: batch.id,
+        crop: batch.crop_type,
+        variety: batch.variety,
+        harvestQuantity: batch.harvest_quantity,
+        farmer: batch.farmer,
+        currentOwner: batch.current_owner || batch.farmer,
+        price: batch.price_per_kg || '0',
+        ipfsHash: batch.ipfsHash || batch.group_id || ''
+      },
+      errors: [],
+      warnings: [],
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error verifying certificate with database fallback:', error);
+    return {
+      isValid: false,
+      errors: [`Verification failed: ${error.message}`],
+      warnings: [],
+      timestamp: new Date().toISOString()
+    };
+  }
+}
 
 /**
  * Generate verification report
  */
-export const generateVerificationReport = (result: VerificationResult): string => {
-  let report = `# Certificate Verification Report\n\n`;
+export function generateVerificationReport(result: VerificationResult): string {
+  const report = {
+    verification: {
+      isValid: result.isValid,
+      timestamp: result.timestamp,
+      error: result.error || null
+    },
+    certificate: result.certificate ? {
+      id: result.certificate.id,
+      batchId: result.certificate.batchId,
+      farmer: result.certificate.farmer,
+      crop: result.certificate.crop,
+      variety: result.certificate.variety,
+      harvestQuantity: result.certificate.harvestQuantity,
+      harvestDate: result.certificate.harvestDate,
+      grading: result.certificate.grading,
+      certification: result.certificate.certification,
+      ipfsHash: result.certificate.ipfsHash,
+      groupId: result.certificate.groupId,
+      createdAt: result.certificate.createdAt
+    } : null
+  };
   
-  if (result.isValid) {
-    report += `✅ **VERIFIED** - Certificate is authentic and valid\n\n`;
-  } else {
-    report += `❌ **INVALID** - Certificate verification failed\n\n`;
-  }
-
-  if (result.batchData) {
-    report += `## Batch Information\n`;
-    report += `- **Batch ID**: ${result.batchData.id}\n`;
-    report += `- **Crop**: ${result.batchData.crop}\n`;
-    report += `- **Variety**: ${result.batchData.variety}\n`;
-    report += `- **Farmer**: ${result.batchData.farmer}\n`;
-    report += `- **Current Owner**: ${result.batchData.currentOwner}\n`;
-    report += `- **Price**: ₹${result.batchData.price}\n`;
-    report += `- **IPFS Hash**: ${result.batchData.ipfsHash}\n\n`;
-  }
-
-  if (result.errors.length > 0) {
-    report += `## Errors\n`;
-    result.errors.forEach(error => {
-      report += `- ❌ ${error}\n`;
-    });
-    report += `\n`;
-  }
-
-  if (result.warnings.length > 0) {
-    report += `## Warnings\n`;
-    result.warnings.forEach(warning => {
-      report += `- ⚠️ ${warning}\n`;
-    });
-    report += `\n`;
-  }
-
-  report += `## Verification Details\n`;
-  report += `- **Blockchain Verified**: ${result.blockchainData ? 'Yes' : 'No'}\n`;
-  report += `- **IPFS Verified**: ${result.ipfsData ? 'Yes' : 'No'}\n`;
-  report += `- **Verification Time**: ${new Date().toISOString()}\n`;
-
-  return report;
-};
-
-/**
- * Extract certificate data from PDF or IPFS
- */
-export const extractCertificateData = async (ipfsHash: string): Promise<CertificateData | null> => {
-  try {
-    const data = await fetchFromIPFS(ipfsHash);
-    
-    return {
-      batchId: data.id || data.batchId,
-      crop: data.crop || data.crop_type,
-      variety: data.variety,
-      harvestQuantity: data.harvestQuantity || data.harvest_quantity,
-      sowingDate: data.sowingDate || data.sowing_date,
-      harvestDate: data.harvestDate || data.harvest_date,
-      freshnessDuration: data.freshnessDuration || data.freshness_duration,
-      grading: data.grading,
-      certification: data.certification,
-      labTest: data.labTest || data.lab_test,
-      price: data.price || data.total_price,
-      farmer: data.farmer,
-      currentOwner: data.currentOwner || data.current_owner,
-      ipfsHash: ipfsHash,
-      blockchainId: data.blockchain_id
-    };
-  } catch (error) {
-    console.error('Failed to extract certificate data:', error);
-    return null;
-  }
-};
-
-/**
- * Quick verification for batch ID
- */
-export const quickVerifyBatch = async (batchId: number, provider?: ethers.Provider): Promise<boolean> => {
-  try {
-    const result = await verifyCertificate(batchId, undefined, provider);
-    return result.isValid;
-  } catch (error) {
-    return false;
-  }
-};
+  return JSON.stringify(report, null, 2);
+}

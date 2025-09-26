@@ -55,22 +55,17 @@ export const ImmutableSupplyChainDisplay: React.FC<ImmutableSupplyChainDisplayPr
   const handleDownloadCertificate = async () => {
     try {
       setDownloading(true);
-      const certificateBlob = await immutableCertificateGenerator.generateCertificateFromBatchId(batchId);
       
-      // Create download link
-      const url = URL.createObjectURL(certificateBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `certificate_${batchId}_${new Date().toISOString().split('T')[0]}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
+      // For the new group-based system, we can't generate certificates from batch ID alone
+      // The certificates are stored in Pinata groups
       toast({
-        title: "Certificate Downloaded",
-        description: "Your certificate has been downloaded successfully.",
+        title: "Certificate Download",
+        description: "Please use the Group Verification system to download certificates from Pinata groups.",
+        variant: "default"
       });
+      
+      // TODO: Implement group-based certificate download
+      console.log('Certificate download requested for batch:', batchId);
     } catch (error) {
       console.error('Error downloading certificate:', error);
       toast({

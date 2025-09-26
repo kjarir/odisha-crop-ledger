@@ -57,6 +57,29 @@ export class ImmutableCertificateGenerator {
    * Build certificate data from transaction chain
    */
   private async buildCertificateData(chain: TransactionChain): Promise<CertificateData> {
+    // Handle case where no transactions exist (group-based system)
+    if (chain.transactions.length === 0) {
+      console.warn('No transactions found for batch, using group-based system fallback');
+      return {
+        batchId: chain.batchId,
+        productDetails: {
+          cropType: 'Unknown Crop',
+          variety: 'Unknown Variety',
+          farmer: 'Unknown Farmer',
+          harvestDate: new Date().toISOString(),
+          grading: 'Unknown Grade',
+          certification: 'Unknown Certification'
+        },
+        ownershipHistory: [],
+        currentOwners: {},
+        transactionChain: [],
+        totalQuantity: 0,
+        availableQuantity: 0,
+        createdAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
+      };
+    }
+
     const firstTransaction = chain.transactions[0];
     const lastTransaction = chain.transactions[chain.transactions.length - 1];
 

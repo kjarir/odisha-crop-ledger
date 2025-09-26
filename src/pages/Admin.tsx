@@ -25,6 +25,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DataCleanupButton } from '@/components/DataCleanupButton';
 import { DatabaseMigrationButton } from '@/components/DatabaseMigrationButton';
 import { TransactionSystemTest } from '@/components/TransactionSystemTest';
+import { DebugGroupManager } from '@/components/DebugGroupManager';
+import { ManualGroupFileAdder } from '@/components/ManualGroupFileAdder';
+import { SingleStepDebugManager } from '@/components/SingleStepDebugManager';
 
 export const Admin = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -77,16 +80,28 @@ export const Admin = () => {
         .order('created_at', { ascending: false })
         .limit(10);
 
-      if (users) {
-        setRecentUsers(users);
-        const totalUsers = users.length;
-        const verifiedUsers = users.filter((u: any) => u.is_verified).length;
+      if (users && Array.isArray(users)) {
+        // Ensure all users have required fields
+        const safeUsers = users.map(user => ({
+          ...user,
+          full_name: user.full_name || user.name || 'Unknown User',
+          email: user.email || `${(user.full_name || user.name || 'unknown').toLowerCase().replace(/\s+/g, '.')}@email.com`,
+          role: user.role || 'farmer',
+          is_verified: user.is_verified || false,
+          created_at: user.created_at || new Date().toISOString()
+        }));
+        
+        setRecentUsers(safeUsers);
+        const totalUsers = safeUsers.length;
+        const verifiedUsers = safeUsers.filter((u: any) => u.is_verified).length;
         
         setStats(prev => ({ 
           ...prev, 
           totalUsers,
           activeUsers: verifiedUsers
         }));
+      } else {
+        setRecentUsers([]);
       }
 
       if (batches) {
@@ -308,28 +323,30 @@ export const Admin = () => {
                   <TableBody>
                     {recentUsers.map((user) => (
                       <TableRow key={user.id}>
-                        <TableCell className="font-medium">{user.name}</TableCell>
-                        <TableCell>{user.name.toLowerCase().replace(' ', '.')}@email.com</TableCell>
+                        <TableCell className="font-medium">{user.full_name}</TableCell>
+                        <TableCell>{user.email}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{user.role}</Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={user.status === 'verified' ? 'default' : 'outline'}>
-                            {user.status === 'verified' ? (
+                          <Badge variant={user.is_verified ? 'default' : 'outline'}>
+                            {user.is_verified ? (
                               <CheckCircle className="h-3 w-3 mr-1" />
                             ) : (
                               <AlertTriangle className="h-3 w-3 mr-1" />
                             )}
-                            {user.status}
+                            {user.is_verified ? 'verified' : 'pending'}
                           </Badge>
                         </TableCell>
-                        <TableCell>{user.joinDate}</TableCell>
+                        <TableCell>
+                          {new Date(user.created_at).toLocaleDateString()}
+                        </TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
                             <Button size="sm" variant="outline">
                               <Eye className="h-3 w-3" />
                             </Button>
-                            {user.status === 'pending' && (
+                            {!user.is_verified && (
                               <Button size="sm" className="gradient-primary">
                                 Verify
                               </Button>
@@ -537,6 +554,9 @@ export const Admin = () => {
                 <div className="space-y-4">
                   <DatabaseMigrationButton />
                   <TransactionSystemTest />
+                  <DebugGroupManager />
+                  <ManualGroupFileAdder />
+                  <SingleStepDebugManager />
                   <div className="border rounded-lg p-4 bg-red-50">
                     <h3 className="font-semibold text-red-800 mb-2">Data Cleanup</h3>
                     <p className="text-sm text-red-700 mb-3">

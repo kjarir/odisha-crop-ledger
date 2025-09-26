@@ -35,32 +35,40 @@ export const TrackProducts = () => {
     
     setLoading(true);
     try {
-      // First try to search by database ID
-      let { data, error } = await (supabase as any)
-        .from('batches')
-        .select('*')
-        .eq('id', batchId)
-        .single();
+      let data = null;
+      let error = null;
 
-      // If not found, try searching by blockchain_id or blockchain_batch_id
-      if (error || !data) {
-        const { data: blockchainData, error: blockchainError } = await (supabase as any)
+      // Check if batchId is a number (integer ID)
+      if (!isNaN(Number(batchId))) {
+        console.log('Searching by integer ID:', batchId);
+        const result = await (supabase as any)
+          .from('batches')
+          .select('*')
+          .eq('id', parseInt(batchId))
+          .single();
+        data = result.data;
+        error = result.error;
+      } else {
+        // Try searching by blockchain_id or blockchain_batch_id
+        console.log('Searching by blockchain ID:', batchId);
+        const result = await (supabase as any)
           .from('batches')
           .select('*')
           .or(`blockchain_id.eq.${batchId},blockchain_batch_id.eq.${batchId}`)
           .single();
-        
-        if (blockchainError) throw blockchainError;
-        data = blockchainData;
+        data = result.data;
+        error = result.error;
       }
 
-      if (data) {
-        setBatch(data);
-        toast({
-          title: "Batch found",
-          description: "Batch information loaded successfully.",
-        });
+      if (error || !data) {
+        throw new Error('Batch not found');
       }
+
+      setBatch(data);
+      toast({
+        title: "Batch found",
+        description: "Batch information loaded successfully.",
+      });
     } catch (error) {
       toast({
         variant: "destructive",
@@ -75,22 +83,57 @@ export const TrackProducts = () => {
 
   const handleDownloadCertificate = () => {
     if (batch) {
-      downloadPDFCertificate(batch);
-      toast({
-        title: "Certificate Downloaded",
-        description: "The certificate has been downloaded successfully.",
-      });
+      try {
+        // Transform batch data to match the expected format
+        const enhancedBatchData = {
+          id: batch.id?.toString() || 'Unknown',
+          farmer: batch.farmer || 'Unknown Farmer',
+          crop: batch.crop_type || 'Unknown Crop',
+          variety: batch.variety || 'Unknown Variety',
+          harvestQuantity: batch.harvest_quantity?.toString() || '0',
+          sowingDate: batch.sowing_date || new Date().toISOString().split('T')[0],
+          harvestDate: batch.harvest_date || new Date().toISOString().split('T')[0],
+          freshnessDuration: batch.freshness_duration?.toString() || '30',
+          grading: batch.grading || 'Standard',
+          certification: batch.certification || 'Standard',
+          labTest: 'Passed',
+          price: batch.price_per_kg || 0,
+          ipfsHash: batch.ipfs_hash || batch.group_id || '',
+          languageDetected: 'English',
+          summary: `Batch of ${batch.crop_type} - ${batch.variety}`,
+          callStatus: 'Completed',
+          offTopicCount: 0,
+          currentOwner: batch.farmer || 'Unknown',
+          transactionHistory: [],
+          currentQuantity: batch.harvest_quantity || 0,
+          originalQuantity: batch.harvest_quantity || 0
+        };
+
+        downloadPDFCertificate(enhancedBatchData);
+        toast({
+          title: "Certificate Downloaded",
+          description: "The certificate has been downloaded successfully.",
+        });
+      } catch (error) {
+        console.error('Error downloading certificate:', error);
+        toast({
+          variant: "destructive",
+          title: "Download Failed",
+          description: "Failed to generate certificate. Please try again.",
+        });
+      }
     }
   };
 
   const handleVerifyCertificate = () => {
-    if (batch && (batch.blockchain_id || batch.blockchain_batch_id)) {
-      navigate(`/verify?batchId=${batch.blockchain_id || batch.blockchain_batch_id}`);
+    if (batch) {
+      // Use the batch ID to navigate to verification
+      navigate(`/verification?batchId=${batch.id}`);
     } else {
       toast({
         variant: "destructive",
-        title: "No Blockchain ID",
-        description: "This batch doesn't have a blockchain ID for verification.",
+        title: "No Batch Selected",
+        description: "Please select a batch first to verify certificates.",
       });
     }
   };

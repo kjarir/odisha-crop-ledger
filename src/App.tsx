@@ -18,8 +18,7 @@ import { TrackProducts } from "./pages/TrackProducts";
 import { Profile } from "./pages/Profile";
 import { BatchRegistration } from "./pages/BatchRegistration";
 import { Admin } from "./pages/Admin";
-import { CertificateVerification } from "./components/CertificateVerification";
-import { Verification } from "./pages/Verification";
+import { UnifiedVerificationSystem } from "./components/UnifiedVerificationSystem";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
@@ -50,8 +49,7 @@ const App = () => (
                   <Route path="/track" element={<TrackProducts />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/batch-registration" element={<BatchRegistration />} />
-                  <Route path="/verify" element={<CertificateVerification />} />
-                  <Route path="/verification" element={<Verification />} />
+                  <Route path="/verification" element={<UnifiedVerificationSystem />} />
                   <Route path="/admin" element={<Admin />} />
                   <Route path="/about" element={<Index />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

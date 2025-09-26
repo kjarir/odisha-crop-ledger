@@ -1,13 +1,12 @@
 import { PINATA_CONFIG } from '@/contracts/config';
 
 /**
- * Working Group Manager - Uses metadata-based grouping with working Pinata API
- * This approach uses the standard file upload API with metadata to simulate groups
+ * Alternative Pinata Groups Manager - Uses standard pinFileToIPFS with group parameter
  */
-export class WorkingGroupManager {
+export class AlternativePinataGroupsManager {
   
   /**
-   * Generate a group name for metadata-based grouping
+   * Generate a group name
    */
   private generateGroupName(farmerName: string, cropType: string, variety: string): string {
     const cleanFarmerName = farmerName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
@@ -18,39 +17,85 @@ export class WorkingGroupManager {
   }
 
   /**
-   * Upload file with group metadata (simulates group creation)
+   * Create a Pinata group using the official API
    */
-  public async uploadFileWithGroupMetadata(
-    groupName: string,
+  public async createGroup(groupName: string): Promise<string> {
+    try {
+      console.log('Creating Pinata group:', groupName);
+      
+      const payload = JSON.stringify({
+        name: groupName,
+      });
+
+      console.log('Group creation payload:', payload);
+
+      const response = await fetch("https://api.pinata.cloud/v3/groups/public", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${PINATA_CONFIG.jwt}`,
+        },
+        body: payload,
+      });
+
+      console.log('Group creation response status:', response.status);
+      const responseText = await response.text();
+      console.log('Raw response:', responseText);
+
+      if (response.ok) {
+        const data = JSON.parse(responseText);
+        console.log('Group creation successful:', data);
+        
+        if (data.data && data.data.id) {
+          console.log(`✅ Group created successfully: ${data.data.id}`);
+          return data.data.id;
+        } else {
+          throw new Error('No group ID in response');
+        }
+      } else {
+        console.error('Group creation failed:', response.status, responseText);
+        throw new Error(`Failed to create group: ${response.status} ${responseText}`);
+      }
+    } catch (error) {
+      console.error('Error creating Pinata group:', error);
+      throw new Error(`Failed to create Pinata group: ${error.message}`);
+    }
+  }
+
+  /**
+   * Upload file to a specific Pinata group using standard pinFileToIPFS
+   */
+  public async uploadFileToGroup(
+    groupId: string,
     fileBlob: Blob,
     fileName: string,
     metadata: any
-  ): Promise<{ ipfsHash: string; groupId: string }> {
+  ): Promise<string> {
     try {
-      console.log('Uploading file with group metadata...');
-      console.log('Group name:', groupName);
+      console.log('Uploading file to Pinata group using standard API:', groupId);
       console.log('File name:', fileName);
       console.log('File size:', fileBlob.size);
       
       const formData = new FormData();
       formData.append("file", fileBlob, fileName);
 
-      // Create pinataMetadata with group information
-      const pinataMetadata = {
-        name: fileName,
-        keyvalues: {
-          groupName: groupName,
-          groupId: groupName, // Use groupName as groupId for metadata-based grouping
-          ...metadata.keyvalues || metadata
-        }
-      };
+      // Add metadata with group information
+      if (metadata) {
+        const pinataMetadata = {
+          name: fileName,
+          keyvalues: {
+            ...metadata.keyvalues,
+            groupId: groupId,
+            groupName: metadata.keyvalues?.groupName || 'unknown'
+          }
+        };
+        formData.append("pinataMetadata", JSON.stringify(pinataMetadata));
+      }
 
-      // Create pinataOptions
+      // Add pinata options
       const pinataOptions = {
         cidVersion: 1,
       };
-
-      formData.append("pinataMetadata", JSON.stringify(pinataMetadata));
       formData.append("pinataOptions", JSON.stringify(pinataOptions));
 
       console.log('FormData contents:');
@@ -62,9 +107,10 @@ export class WorkingGroupManager {
         }
       }
 
-      console.log('Making request to working Pinata API...');
+      console.log('Making request to standard pinFileToIPFS API...');
       
-      const request = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+      // Use standard pinFileToIPFS endpoint
+      const response = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
         method: "POST",
         headers: {
           "pinata_api_key": PINATA_CONFIG.apiKey,
@@ -73,35 +119,65 @@ export class WorkingGroupManager {
         body: formData,
       });
 
-      console.log('Upload response status:', request.status);
-      const responseText = await request.text();
+      console.log('Upload response status:', response.status);
+      const responseText = await response.text();
       console.log('Upload response body:', responseText);
 
-      if (!request.ok) {
-        console.error('Upload failed with status:', request.status);
+      if (!response.ok) {
+        console.error('Upload failed with status:', response.status);
         console.error('Response body:', responseText);
-        throw new Error(`Failed to upload file: ${request.status} ${responseText}`);
+        throw new Error(`Failed to upload file: ${response.status} ${responseText}`);
       }
 
-      const response = JSON.parse(responseText);
-      const ipfsHash = response.IpfsHash;
+      const data = JSON.parse(responseText);
+      const ipfsHash = data.IpfsHash;
       
       if (!ipfsHash) {
-        console.error('No IPFS hash in response:', response);
+        console.error('No IPFS hash in response:', data);
         throw new Error('No IPFS hash returned from upload');
       }
 
-      console.log(`✅ Successfully uploaded file ${fileName} with group metadata ${groupName}, IPFS: ${ipfsHash}`);
+      console.log(`✅ Successfully uploaded file ${fileName} with group metadata, IPFS: ${ipfsHash}`);
       
-      return { ipfsHash, groupId: groupName };
+      // Try to add file to group after upload
+      await this.addFileToGroup(groupId, ipfsHash);
+      
+      return ipfsHash;
     } catch (error) {
-      console.error('Error uploading file with group metadata:', error);
-      throw new Error(`Failed to upload file with group metadata: ${error.message}`);
+      console.error('Error uploading file to group:', error);
+      throw new Error(`Failed to upload file to group: ${error.message}`);
     }
   }
 
   /**
-   * Upload harvest certificate with group metadata
+   * Add file to group after upload
+   */
+  private async addFileToGroup(groupId: string, fileId: string): Promise<void> {
+    try {
+      console.log(`Adding file ${fileId} to group ${groupId}...`);
+      
+      const response = await fetch(`https://api.pinata.cloud/v3/groups/public/${groupId}/ids/${fileId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${PINATA_CONFIG.jwt}`,
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`✅ File ${fileId} added to group ${groupId}`);
+      } else {
+        const errorText = await response.text();
+        console.warn(`Failed to add file to group: ${response.status} ${errorText}`);
+      }
+    } catch (error) {
+      console.warn('Error adding file to group:', error);
+      // Don't throw error as this is optional
+    }
+  }
+
+  /**
+   * Upload harvest certificate to a new group
    */
   public async uploadHarvestCertificate(
     batchData: {
@@ -120,10 +196,13 @@ export class WorkingGroupManager {
       // Generate group name
       const groupName = this.generateGroupName(batchData.farmerName, batchData.cropType, batchData.variety);
       
+      // Create new group
+      const groupId = await this.createGroup(groupName);
+      
       // Generate PDF
-      const pdfBlob = await this.createHarvestPDF(batchData, groupName);
+      const pdfBlob = await this.createHarvestPDF(batchData, groupId, groupName);
 
-      // Upload with group metadata
+      // Upload to group
       const fileName = `harvest_certificate_${batchData.batchId}_${Date.now()}.pdf`;
       const metadata = {
         keyvalues: {
@@ -137,15 +216,15 @@ export class WorkingGroupManager {
           cropType: batchData.cropType,
           variety: batchData.variety,
           type: 'certificate',
-          groupId: groupName,
+          groupId: groupId,
           groupName: groupName
         }
       };
 
-      const result = await this.uploadFileWithGroupMetadata(groupName, pdfBlob, fileName, metadata);
+      const ipfsHash = await this.uploadFileToGroup(groupId, pdfBlob, fileName, metadata);
       
-      console.log(`Uploaded harvest certificate for batch ${batchData.batchId}, Group: ${groupName}, IPFS: ${result.ipfsHash}`);
-      return { pdfBlob, groupId: result.groupId, ipfsHash: result.ipfsHash };
+      console.log(`Uploaded harvest certificate for batch ${batchData.batchId}, Group: ${groupName}, Group ID: ${groupId}, IPFS: ${ipfsHash}`);
+      return { pdfBlob, groupId, ipfsHash };
     } catch (error) {
       console.error('Error uploading harvest certificate:', error);
       throw new Error('Failed to upload harvest certificate');
@@ -170,7 +249,7 @@ export class WorkingGroupManager {
       // Generate PDF
       const pdfBlob = await this.createPurchasePDF(purchaseData, groupId);
 
-      // Upload with group metadata
+      // Upload to group
       const fileName = `purchase_certificate_${purchaseData.batchId}_${Date.now()}.pdf`;
       const metadata = {
         keyvalues: {
@@ -182,15 +261,14 @@ export class WorkingGroupManager {
           price: (purchaseData.quantity * purchaseData.pricePerKg).toString(),
           timestamp: purchaseData.timestamp,
           type: 'certificate',
-          groupId: groupId,
-          groupName: groupId
+          groupId: groupId
         }
       };
 
-      const result = await this.uploadFileWithGroupMetadata(groupId, pdfBlob, fileName, metadata);
+      const ipfsHash = await this.uploadFileToGroup(groupId, pdfBlob, fileName, metadata);
       
-      console.log(`Uploaded purchase certificate for batch ${purchaseData.batchId}, Group: ${groupId}, IPFS: ${result.ipfsHash}`);
-      return { pdfBlob, ipfsHash: result.ipfsHash };
+      console.log(`Uploaded purchase certificate for batch ${purchaseData.batchId}, Group ID: ${groupId}, IPFS: ${ipfsHash}`);
+      return { pdfBlob, ipfsHash };
     } catch (error) {
       console.error('Error uploading purchase certificate:', error);
       throw new Error('Failed to upload purchase certificate');
@@ -202,6 +280,7 @@ export class WorkingGroupManager {
    */
   private async createHarvestPDF(
     batchData: any,
+    groupId: string,
     groupName: string
   ): Promise<Blob> {
     // Import jsPDF dynamically
@@ -220,8 +299,9 @@ export class WorkingGroupManager {
     pdf.text(`Quantity: ${batchData.harvestQuantity} kg`, 20, 80);
     pdf.text(`Harvest Date: ${batchData.harvestDate}`, 20, 90);
     pdf.text(`Grading: ${batchData.grading}`, 20, 100);
-    pdf.text(`Group: ${groupName}`, 20, 110);
-    pdf.text(`Generated: ${new Date().toISOString()}`, 20, 120);
+    pdf.text(`Group ID: ${groupId}`, 20, 110);
+    pdf.text(`Group Name: ${groupName}`, 20, 120);
+    pdf.text(`Generated: ${new Date().toISOString()}`, 20, 130);
     
     return pdf.output('blob');
   }
@@ -231,7 +311,7 @@ export class WorkingGroupManager {
    */
   private async createPurchasePDF(
     purchaseData: any,
-    groupName: string
+    groupId: string
   ): Promise<Blob> {
     // Import jsPDF dynamically
     const { jsPDF } = await import('jspdf');
@@ -249,41 +329,12 @@ export class WorkingGroupManager {
     pdf.text(`Quantity: ${purchaseData.quantity} kg`, 20, 80);
     pdf.text(`Price: ₹${purchaseData.pricePerKg}/kg`, 20, 90);
     pdf.text(`Total: ₹${purchaseData.quantity * purchaseData.pricePerKg}`, 20, 100);
-    pdf.text(`Group: ${groupName}`, 20, 110);
+    pdf.text(`Group ID: ${groupId}`, 20, 110);
     pdf.text(`Generated: ${new Date().toISOString()}`, 20, 120);
     
     return pdf.output('blob');
   }
-
-  /**
-   * List files by group (metadata-based)
-   */
-  public async listFilesByGroup(groupName: string): Promise<any[]> {
-    try {
-      console.log(`Listing files for group: ${groupName}`);
-      
-      const response = await fetch(`https://api.pinata.cloud/data/pinList?metadata[keyvalues][groupName]={"value":"${groupName}","op":"eq"}`, {
-        method: "GET",
-        headers: {
-          "pinata_api_key": PINATA_CONFIG.apiKey,
-          "pinata_secret_api_key": PINATA_CONFIG.apiSecret,
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`Found ${data.count} files for group ${groupName}`);
-        return data.rows || [];
-      } else {
-        console.error('Failed to list files by group:', response.status);
-        return [];
-      }
-    } catch (error) {
-      console.error('Error listing files by group:', error);
-      return [];
-    }
-  }
 }
 
 // Export singleton instance
-export const workingGroupManager = new WorkingGroupManager();
+export const alternativePinataGroupsManager = new AlternativePinataGroupsManager();

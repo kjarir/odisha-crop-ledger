@@ -47,11 +47,8 @@ export const Header = () => {
           <Link to="/track" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
             Track Products
           </Link>
-          <Link to="/verify" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
-            Verify Certificate
-          </Link>
           <Link to="/verification" className="text-sm font-medium text-muted-foreground hover:text-primary transition-smooth">
-            Supply Chain Verification
+            Certificate Verification
           </Link>
           <Button
             variant="ghost"
@@ -182,18 +179,11 @@ export const Header = () => {
               Track Produce
             </Link>
             <Link
-              to="/verify"
-              className="block text-sm font-medium text-muted-foreground hover:text-primary transition-smooth"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Verify Certificate
-            </Link>
-            <Link
               to="/verification"
               className="block text-sm font-medium text-muted-foreground hover:text-primary transition-smooth"
               onClick={() => setIsMenuOpen(false)}
             >
-              Supply Chain Verification
+              Certificate Verification
             </Link>
             <button
               onClick={() => {

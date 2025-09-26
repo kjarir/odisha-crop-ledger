@@ -36,6 +36,9 @@ export class ProperGroupManager {
         name: groupName,
       });
 
+      console.log('Creating group with payload:', payload);
+      console.log('Using JWT:', PINATA_CONFIG.jwt.substring(0, 50) + '...');
+
       const request = await fetch("https://api.pinata.cloud/v3/groups/public", {
         method: "POST",
         headers: {
@@ -45,16 +48,28 @@ export class ProperGroupManager {
         body: payload,
       });
 
+      console.log('Group creation response status:', request.status);
+      const responseText = await request.text();
+      console.log('Group creation response:', responseText);
+
       if (!request.ok) {
-        throw new Error(`Failed to create group: ${request.status} ${request.statusText}`);
+        // Try to parse error response
+        let errorMessage = `Failed to create group: ${request.status} ${request.statusText}`;
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.message || errorData.error || errorMessage;
+        } catch (e) {
+          // Use default error message
+        }
+        throw new Error(errorMessage);
       }
 
-      const response = await request.json();
+      const response = JSON.parse(responseText);
       console.log(`Created Pinata group: ${groupName} with ID: ${response.data.id}`);
       return response.data.id;
     } catch (error) {
       console.error('Error creating Pinata group:', error);
-      throw new Error('Failed to create Pinata group');
+      throw new Error(`Failed to create Pinata group: ${error.message}`);
     }
   }
 
@@ -68,16 +83,47 @@ export class ProperGroupManager {
     metadata: any
   ): Promise<string> {
     try {
+      console.log('Uploading file to group:', groupId);
+      console.log('File name:', fileName);
+      console.log('File size:', fileBlob.size);
+      
+      // Validate group ID format
+      if (!groupId || typeof groupId !== 'string') {
+        throw new Error('Invalid group ID provided');
+      }
+
       const formData = new FormData();
 
       formData.append("file", fileBlob, fileName);
       formData.append("network", "public");
       formData.append("group", groupId);
 
-      // Add metadata if provided
+      // Add metadata if provided - use pinataMetadata format
       if (metadata) {
-        formData.append("metadata", JSON.stringify(metadata));
+        const pinataMetadata = {
+          name: fileName,
+          keyvalues: metadata.keyvalues || metadata
+        };
+        formData.append("pinataMetadata", JSON.stringify(pinataMetadata));
       }
+
+      // Add pinata options
+      const pinataOptions = {
+        cidVersion: 1,
+      };
+      formData.append("pinataOptions", JSON.stringify(pinataOptions));
+
+      console.log('FormData contents:');
+      for (let [key, value] of formData.entries()) {
+        if (key === 'file') {
+          console.log(key, `[Blob: ${(value as Blob).size} bytes, type: ${(value as Blob).type}]`);
+        } else {
+          console.log(key, value);
+        }
+      }
+
+      console.log('Making request to:', "https://uploads.pinata.cloud/v3/files");
+      console.log('JWT Token (first 50 chars):', PINATA_CONFIG.jwt.substring(0, 50) + '...');
 
       const request = await fetch("https://uploads.pinata.cloud/v3/files", {
         method: "POST",
@@ -87,17 +133,126 @@ export class ProperGroupManager {
         body: formData,
       });
 
+      console.log('Upload response status:', request.status);
+      console.log('Upload response headers:', Object.fromEntries(request.headers.entries()));
+      
+      const responseText = await request.text();
+      console.log('Upload response body:', responseText);
+
       if (!request.ok) {
-        throw new Error(`Failed to upload file: ${request.status} ${request.statusText}`);
+        console.error('Upload failed with status:', request.status);
+        console.error('Response body:', responseText);
+        throw new Error(`Failed to upload file: ${request.status} ${responseText}`);
       }
 
-      const response = await request.json();
+      const response = JSON.parse(responseText);
       const ipfsHash = response.ipfsHash || response.IpfsHash;
-      console.log(`Uploaded file ${fileName} to group ${groupId}, IPFS: ${ipfsHash}`);
+      
+      if (!ipfsHash) {
+        console.error('No IPFS hash in response:', response);
+        throw new Error('No IPFS hash returned from upload');
+      }
+
+      console.log(`✅ Successfully uploaded file ${fileName} to group ${groupId}, IPFS: ${ipfsHash}`);
+      
+      // Verify the file was actually uploaded to the group
+      await this.verifyFileInGroup(groupId, ipfsHash);
+      
       return ipfsHash;
     } catch (error) {
       console.error('Error uploading file to group:', error);
-      throw new Error('Failed to upload file to group');
+      throw new Error(`Failed to upload file to group: ${error.message}`);
+    }
+  }
+
+  /**
+   * Verify that a file was uploaded to a specific group
+   */
+  private async verifyFileInGroup(groupId: string, ipfsHash: string): Promise<void> {
+    try {
+      console.log(`Verifying file ${ipfsHash} is in group ${groupId}...`);
+      
+      // Get group details
+      const groupResponse = await fetch(`https://api.pinata.cloud/v3/groups/public/${groupId}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${PINATA_CONFIG.jwt}`,
+        }
+      });
+
+      if (groupResponse.ok) {
+        const groupData = await groupResponse.json();
+        console.log('Group details:', groupData);
+        
+        // Check if the file is in the group's file list
+        if (groupData.files && Array.isArray(groupData.files)) {
+          const fileInGroup = groupData.files.find((file: any) => 
+            file.ipfsHash === ipfsHash || file.IpfsHash === ipfsHash
+          );
+          
+          if (fileInGroup) {
+            console.log(`✅ File ${ipfsHash} confirmed in group ${groupId}`);
+          } else {
+            console.warn(`⚠️ File ${ipfsHash} not found in group ${groupId} file list`);
+          }
+        } else {
+          console.log('Group does not have files array or is empty');
+        }
+      } else {
+        console.warn(`Could not verify group ${groupId}: ${groupResponse.status}`);
+      }
+    } catch (error) {
+      console.warn('Error verifying file in group:', error);
+      // Don't throw error as this is just verification
+    }
+  }
+
+  /**
+   * List all groups and their files for debugging
+   */
+  public async listAllGroups(): Promise<void> {
+    try {
+      console.log('Listing all groups...');
+      
+      const response = await fetch("https://api.pinata.cloud/v3/groups/public", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${PINATA_CONFIG.jwt}`,
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('All groups:', data);
+        
+        if (data.groups && Array.isArray(data.groups)) {
+          for (const group of data.groups) {
+            console.log(`Group: ${group.name} (ID: ${group.id})`);
+            console.log(`Created: ${group.created_at}`);
+            
+            // Get files in this group
+            try {
+              const groupResponse = await fetch(`https://api.pinata.cloud/v3/groups/public/${group.id}`, {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${PINATA_CONFIG.jwt}`,
+                }
+              });
+              
+              if (groupResponse.ok) {
+                const groupData = await groupResponse.json();
+                console.log(`Files in group ${group.name}:`, groupData.files || 'No files');
+              }
+            } catch (error) {
+              console.error(`Error getting files for group ${group.id}:`, error);
+            }
+          }
+        }
+      } else {
+        console.error('Failed to list groups:', response.status);
+      }
+    } catch (error) {
+      console.error('Error listing groups:', error);
     }
   }
 
@@ -210,71 +365,6 @@ export class ProperGroupManager {
       console.error('Error uploading purchase certificate:', error);
       throw new Error('Failed to upload purchase certificate');
     }
-  }
-
-  /**
-   * Get group details using the correct Pinata API
-   */
-  public async getGroup(groupId: string): Promise<any> {
-    try {
-      const request = await fetch(
-        `https://api.pinata.cloud/v3/groups/public/${groupId}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${PINATA_CONFIG.jwt}`,
-          }
-        }
-      );
-
-      if (!request.ok) {
-        throw new Error(`Failed to get group: ${request.status} ${request.statusText}`);
-      }
-
-      const response = await request.json();
-      return response;
-    } catch (error) {
-      console.error('Error getting group:', error);
-      throw new Error('Failed to get group');
-    }
-  }
-
-  /**
-   * List all groups using the correct Pinata API
-   */
-  public async listGroups(): Promise<any[]> {
-    try {
-      const request = await fetch("https://api.pinata.cloud/v3/groups/public", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${PINATA_CONFIG.jwt}`,
-        }
-      });
-
-      if (!request.ok) {
-        throw new Error(`Failed to list groups: ${request.status} ${request.statusText}`);
-      }
-
-      const response = await request.json();
-      return response.groups || [];
-    } catch (error) {
-      console.error('Error listing groups:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Generate certificate URL for viewing
-   */
-  public getCertificateUrl(ipfsHash: string): string {
-    return `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
-  }
-
-  /**
-   * Generate group verification URL
-   */
-  public getGroupVerificationUrl(groupId: string): string {
-    return `https://gateway.pinata.cloud/ipfs/?group=${groupId}`;
   }
 
   /**

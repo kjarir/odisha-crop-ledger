@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
-import { pinataGroupManager } from '@/utils/pinataGroupManager';
+import { singleStepGroupManager } from '@/utils/singleStepGroupManager';
 import { 
   Search, 
   Download, 
@@ -44,11 +44,11 @@ export const GroupVerificationSystem: React.FC = () => {
 
     try {
       // Get group information
-      const info = await pinataGroupManager.getGroupInfo(groupId);
+      const info = await singleStepGroupManager.getGroupInfo(groupId);
       setGroupInfo(info);
 
       // Get all certificates in the group
-      const certs = await pinataGroupManager.getGroupCertificates(groupId);
+      const certs = await singleStepGroupManager.getGroupCertificates(groupId);
       
       // Sort certificates by timestamp
       const sortedCerts = certs.sort((a, b) => {
@@ -76,7 +76,7 @@ export const GroupVerificationSystem: React.FC = () => {
   };
 
   const handleDownloadCertificate = (ipfsHash: string, fileName: string) => {
-    const url = pinataGroupManager.getCertificateUrl(ipfsHash);
+    const url = singleStepGroupManager.getCertificateUrl(ipfsHash);
     const link = document.createElement('a');
     link.href = url;
     link.download = fileName;
@@ -273,7 +273,7 @@ export const GroupVerificationSystem: React.FC = () => {
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => window.open(pinataGroupManager.getCertificateUrl(cert.ipfs_pin_hash), '_blank')}
+                      onClick={() => window.open(singleStepGroupManager.getCertificateUrl(cert.ipfs_pin_hash), '_blank')}
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
                       View Online

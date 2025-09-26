@@ -1,10 +1,11 @@
-import jsPDF from 'jspdf';
-import { Batch } from '@/contracts/config';
+/**
+ * Certificate Generator Utilities
+ */
 
-// Enhanced transaction interface for supply chain tracking
 export interface SupplyChainTransaction {
   id: string;
-  type: 'harvest' | 'purchase' | 'transfer' | 'processing' | 'retail';
+  transactionId: string;
+  type: 'HARVEST' | 'PURCHASE' | 'TRANSFER' | 'PROCESSING' | 'RETAIL';
   from: string;
   to: string;
   quantity: number;
@@ -12,26 +13,63 @@ export interface SupplyChainTransaction {
   timestamp: string;
   location?: string;
   notes?: string;
+  batchId: string;
+  ipfsHash: string;
+  productDetails?: {
+    cropType: string;
+    variety: string;
+    harvestDate: string;
+    grading: string;
+    certification: string;
+  };
 }
 
-// Enhanced batch data with transaction history
-export interface EnhancedBatchData extends Batch {
-  transactionHistory?: SupplyChainTransaction[];
-  currentQuantity?: number;
-  originalQuantity?: number;
+export interface EnhancedBatchData {
+  id: string;
+  farmer: string;
+  crop: string;
+  variety: string;
+  harvestQuantity: string;
+  sowingDate: string;
+  harvestDate: string;
+  freshnessDuration: string;
+  grading: string;
+  certification: string;
+  labTest: string;
+  price: number;
+  ipfsHash: string;
+  languageDetected: string;
+  summary: string;
+  callStatus: string;
+  offTopicCount: number;
+  currentOwner: string;
+  transactionHistory: SupplyChainTransaction[];
+  currentQuantity: number;
+  originalQuantity: number;
 }
 
-// Certificate generation utility for AgriTrace
-export const generatePDFCertificate = async (batchData: EnhancedBatchData): Promise<Blob> => {
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  
-  // Government-style colors
-  const primaryColor = [0, 51, 102]; // Deep blue
-  const accentColor = [255, 215, 0]; // Gold
-  const textColor = [0, 0, 0]; // Black
-  const lightGray = [240, 240, 240]; // Light gray for backgrounds
+/**
+ * Generate PDF certificate from batch data
+ */
+export async function generatePDFCertificate(batchData: EnhancedBatchData): Promise<Blob> {
+  try {
+    // Import jsPDF dynamically
+    const { default: jsPDF } = await import('jspdf');
+    
+    // Validate required fields
+    if (!batchData.id || !batchData.farmer || !batchData.crop) {
+      throw new Error('Missing required batch data for certificate generation');
+    }
+    
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    
+    // Government-style colors
+    const primaryColor = [0, 51, 102]; // Deep blue
+    const accentColor = [255, 215, 0]; // Gold
+    const textColor = [0, 0, 0]; // Black
+    const lightGray = [240, 240, 240]; // Light gray for backgrounds
   
   // Background pattern (subtle)
   doc.setFillColor(...lightGray);
@@ -82,7 +120,6 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
   
   // Certificate body
   let yPosition = 90;
-  const lineHeight = 6;
   
   // Official declaration
   doc.setFontSize(14);
@@ -90,28 +127,27 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
   doc.text('This is to certify that:', 30, yPosition);
   yPosition += 15;
   
-  // Product information in a formal table format
+  // Product information
   doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
   
+  // Clean grading to show only the actual grade
+  const cleanGrading = batchData.grading.split('|')[0].trim();
+  
   const productInfo = [
-    { label: 'Product Name', value: `${batchData.crop || 'N/A'} - ${batchData.variety || 'N/A'}` },
+    { label: 'Product Name', value: `${batchData.crop} - ${batchData.variety}` },
     { label: 'Batch Identification Number', value: `ATC-${batchData.id}-${new Date().getFullYear()}` },
-    { label: 'Original Harvest Quantity', value: `${batchData.originalQuantity || batchData.harvestQuantity || 'N/A'} kg` },
-    { label: 'Current Available Quantity', value: `${batchData.currentQuantity || batchData.harvestQuantity || 'N/A'} kg` },
-    { label: 'Sowing Date', value: batchData.sowingDate ? new Date(batchData.sowingDate).toLocaleDateString('en-IN') : 'N/A' },
-    { label: 'Harvest Date', value: batchData.harvestDate ? new Date(batchData.harvestDate).toLocaleDateString('en-IN') : 'N/A' },
-    { label: 'Quality Grade', value: batchData.grading ? batchData.grading.split('|')[0].trim() : 'Standard' },
-    { label: 'Certification Level', value: batchData.certification || 'Standard' },
-    { label: 'Freshness Duration', value: `${batchData.freshnessDuration || 'N/A'} days` },
-    { label: 'Current Market Price', value: batchData.price ? `₹${(batchData.price / 100).toFixed(2)} per kg` : 'N/A' },
-    { label: 'Current Owner', value: batchData.currentOwner || 'N/A' },
-    { label: 'Blockchain Verification Hash', value: batchData.ipfsHash ? `${batchData.ipfsHash.substring(0, 20)}...` : 'N/A' },
+    { label: 'Harvest Quantity', value: `${batchData.harvestQuantity} kg` },
+    { label: 'Harvest Date', value: new Date(batchData.harvestDate).toLocaleDateString('en-IN') },
+    { label: 'Quality Grade', value: cleanGrading },
+    { label: 'Certification Level', value: batchData.certification },
+    { label: 'Price per Kg', value: `₹${batchData.price}` },
+    { label: 'Total Value', value: `₹${parseFloat(batchData.harvestQuantity) * batchData.price}` }
   ];
   
   // Create a formal table layout
   productInfo.forEach((field, index) => {
-    if (yPosition > pageHeight - 80) {
+    if (yPosition > pageHeight - 120) {
       doc.addPage();
       yPosition = 30;
     }
@@ -130,31 +166,15 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
     // Field value
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    const textWidth = doc.getTextWidth(field.value);
-    if (textWidth > pageWidth - 120) {
-      // Split long text
-      const splitText = doc.splitTextToSize(field.value, pageWidth - 120);
-      doc.text(splitText, 35, yPosition + 4);
-      yPosition += lineHeight * splitText.length;
-    } else {
-      doc.text(field.value, 35, yPosition + 4);
-      yPosition += lineHeight;
-    }
+    doc.text(field.value, 35, yPosition + 4);
+    yPosition += 8;
     
     yPosition += 8;
   });
 
-  // Add supply chain transaction history if available
+  // Add transaction history if available
   if (batchData.transactionHistory && batchData.transactionHistory.length > 0) {
-    // Check if we need a new page
-    if (yPosition > pageHeight - 120) {
-      doc.addPage();
-      yPosition = 30;
-    }
-
-    yPosition += 15;
-    
-    // Supply Chain History Header
+    yPosition += 10;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.setTextColor(...primaryColor);
@@ -167,12 +187,8 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
     doc.line(30, yPosition, pageWidth - 30, yPosition);
     yPosition += 10;
 
-    // Transaction details in formal format
-    doc.setFontSize(9);
-    doc.setTextColor(...textColor);
-    
     batchData.transactionHistory.forEach((transaction, index) => {
-      if (yPosition > pageHeight - 60) {
+      if (yPosition > pageHeight - 80) {
         doc.addPage();
         yPosition = 30;
       }
@@ -180,46 +196,67 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
       // Transaction header
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
-      doc.text(`Transaction ${index + 1}: ${transaction.type.toUpperCase()}`, 35, yPosition);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text(new Date(transaction.timestamp).toLocaleDateString('en-IN'), pageWidth - 35, yPosition, { align: 'right' });
+      doc.setTextColor(...textColor);
+      doc.text(`${index + 1}. ${transaction.type} Transaction`, 35, yPosition);
       yPosition += 6;
 
-      // Transaction details in table format
-      const details = [
-        { label: 'From', value: transaction.from },
-        { label: 'To', value: transaction.to },
-        { label: 'Quantity', value: `${transaction.quantity} kg` },
-        { label: 'Price', value: `₹${(transaction.price / 100).toFixed(2)}` }
-      ];
-
-      details.forEach(detail => {
-        doc.setFont('helvetica', 'bold');
-        doc.text(`${detail.label}:`, 40, yPosition);
-        doc.setFont('helvetica', 'normal');
-        doc.text(detail.value, 40 + 25, yPosition);
-        yPosition += 4;
-      });
+      // Transaction details
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`From: ${transaction.from}`, 40, yPosition);
+      doc.text(`To: ${transaction.to}`, 40, yPosition + 4);
+      doc.text(`Quantity: ${transaction.quantity} kg`, 40, yPosition + 8);
+      doc.text(`Price: ₹${transaction.price}`, 40, yPosition + 12);
+      doc.text(`Date: ${new Date(transaction.timestamp).toLocaleDateString('en-IN')}`, 40, yPosition + 16);
       
       if (transaction.location) {
-        doc.setFont('helvetica', 'bold');
-        doc.text('Location:', 40, yPosition);
-        doc.setFont('helvetica', 'normal');
-        doc.text(transaction.location, 40 + 25, yPosition);
-        yPosition += 4;
+        doc.text(`Location: ${transaction.location}`, 40, yPosition + 20);
+        yPosition += 24;
+      } else {
+        yPosition += 20;
       }
       
-      if (transaction.notes) {
-        doc.setFont('helvetica', 'bold');
-        doc.text('Notes:', 40, yPosition);
-        doc.setFont('helvetica', 'normal');
-        doc.text(transaction.notes, 40 + 25, yPosition);
-        yPosition += 4;
-      }
-
       yPosition += 8;
     });
+  }
+
+  // Add verification information
+  yPosition += 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(...primaryColor);
+  doc.text('VERIFICATION INFORMATION', 30, yPosition);
+  yPosition += 8;
+
+  // Draw line under header
+  doc.setDrawColor(...primaryColor);
+  doc.setLineWidth(1);
+  doc.line(30, yPosition, pageWidth - 30, yPosition);
+  yPosition += 10;
+
+  doc.setFontSize(10);
+  doc.setTextColor(...textColor);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Current Owner:', 35, yPosition);
+  doc.setFont('helvetica', 'normal');
+  doc.text(batchData.currentOwner || 'Unknown', 35, yPosition + 4);
+  yPosition += 8;
+  
+  doc.setFont('helvetica', 'bold');
+  doc.text('Available Quantity:', 35, yPosition);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${batchData.currentQuantity || 0} kg`, 35, yPosition + 4);
+  yPosition += 8;
+  
+  if (batchData.ipfsHash && batchData.ipfsHash.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('IPFS Hash:', 35, yPosition);
+    doc.setFont('helvetica', 'normal');
+    const hashDisplay = batchData.ipfsHash.length > 20 
+      ? batchData.ipfsHash.substring(0, 20) + '...' 
+      : batchData.ipfsHash;
+    doc.text(hashDisplay, 35, yPosition + 4);
+    yPosition += 8;
   }
   
   // Official declaration
@@ -247,8 +284,8 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
   doc.text('Government of Odisha', 50, yPosition + 16);
   
   doc.text('Digital Verification', pageWidth - 120, yPosition + 8);
-  doc.text('Blockchain Hash', pageWidth - 120, yPosition + 12);
-  doc.text(batchData.ipfsHash ? `${batchData.ipfsHash.substring(0, 15)}...` : 'N/A', pageWidth - 120, yPosition + 16);
+  doc.text('IPFS Hash', pageWidth - 120, yPosition + 12);
+  doc.text(batchData.ipfsHash ? batchData.ipfsHash.substring(0, 15) + '...' : 'N/A', pageWidth - 120, yPosition + 16);
   
   // Official seal area
   yPosition = pageHeight - 40;
@@ -264,53 +301,30 @@ export const generatePDFCertificate = async (batchData: EnhancedBatchData): Prom
   // Generate blob
   const pdfBlob = doc.output('blob');
   return pdfBlob;
-};
+  } catch (error) {
+    console.error('Error generating PDF certificate:', error);
+    throw new Error(`Failed to generate PDF certificate: ${error.message}`);
+  }
+}
 
-export const downloadPDFCertificate = async (batchData: Batch) => {
+/**
+ * Download PDF certificate
+ */
+export async function downloadPDFCertificate(batchData: EnhancedBatchData, filename?: string): Promise<void> {
   try {
     const pdfBlob = await generatePDFCertificate(batchData);
+    const downloadUrl = window.URL.createObjectURL(pdfBlob);
     
-    // Create download link
-    const url = URL.createObjectURL(pdfBlob);
     const link = document.createElement('a');
-    link.href = url;
-    link.download = `AgriTrace_Certificate_${batchData.id}.pdf`;
+    link.href = downloadUrl;
+    link.download = filename || `certificate_${batchData.id}_${new Date().getFullYear()}.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    URL.revokeObjectURL(url);
-    
-    return pdfBlob;
+    window.URL.revokeObjectURL(downloadUrl);
   } catch (error) {
-    console.error('Error generating PDF certificate:', error);
-    throw error;
+    console.error('Error downloading PDF certificate:', error);
+    throw new Error('Failed to download PDF certificate');
   }
-};
-
-// Legacy function for backward compatibility
-export const generateCertificate = async (batchData: any) => {
-  // Convert legacy format to new format
-  const batch: Batch = {
-    id: batchData.id || 0,
-    farmer: batchData.farmer || '',
-    crop: batchData.crop_type || batchData.crop || '',
-    variety: batchData.variety || '',
-    harvestQuantity: batchData.harvest_quantity?.toString() || '',
-    sowingDate: batchData.sowing_date || '',
-    harvestDate: batchData.harvest_date || '',
-    freshnessDuration: batchData.freshness_duration?.toString() || '7',
-    grading: batchData.grading || 'Standard',
-    certification: batchData.certification || 'Standard',
-    labTest: batchData.lab_test || '',
-    price: batchData.price || batchData.total_price || 0,
-    ipfsHash: batchData.ipfs_hash || '',
-    languageDetected: batchData.language_detected || '',
-    summary: batchData.summary || '',
-    callStatus: batchData.call_status || '',
-    offTopicCount: batchData.off_topic_count || 0,
-    currentOwner: batchData.current_owner || batchData.farmer || '',
-  };
-  
-  return downloadPDFCertificate(batch);
-};
+}

@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import { pinataGroupManager } from './pinataGroupManager';
+import { singleStepGroupManager } from './singleStepGroupManager';
 
 /**
  * Group Certificate Generator
@@ -35,27 +35,30 @@ export class GroupCertificateGenerator {
   ): Promise<{ pdfBlob: Blob; groupId: string }> {
     try {
       // Create group for this batch
-      const groupId = await pinataGroupManager.createBatchGroup(
-        batchData.batchId,
-        batchData.farmerName
-      );
+      const groupName = `${batchData.farmerName}_${batchData.cropType}_${batchData.variety}`.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+      const groupId = await singleStepGroupManager.createGroup(groupName);
 
       // Generate PDF
       const pdfBlob = await this.createHarvestPDF(batchData, groupId);
 
       // Upload to group
-      const ipfsHash = await pinataGroupManager.uploadCertificateToGroup(
-        groupId,
-        pdfBlob,
-        'HARVEST',
-        {
+      const fileName = `harvest_certificate_${batchData.batchId}_${Date.now()}.pdf`;
+      const metadata = {
+        keyvalues: {
+          batchId: batchData.batchId,
+          transactionType: 'HARVEST',
           from: 'Farm',
           to: batchData.farmerName,
-          quantity: batchData.harvestQuantity,
-          price: batchData.harvestQuantity * batchData.pricePerKg,
-          timestamp: new Date().toISOString()
+          quantity: batchData.harvestQuantity.toString(),
+          price: (batchData.harvestQuantity * batchData.pricePerKg).toString(),
+          timestamp: new Date().toISOString(),
+          cropType: batchData.cropType,
+          variety: batchData.variety,
+          type: 'certificate',
+          groupId: groupId
         }
-      );
+      };
+      const ipfsHash = await singleStepGroupManager.uploadFileToGroup(groupId, pdfBlob, fileName, metadata);
 
       console.log(`Generated harvest certificate for batch ${batchData.batchId}, Group ID: ${groupId}`);
       return { pdfBlob, groupId };
@@ -91,18 +94,21 @@ export class GroupCertificateGenerator {
       const pdfBlob = await this.createPurchasePDF(purchaseData, groupId);
 
       // Upload to group
-      const ipfsHash = await pinataGroupManager.uploadCertificateToGroup(
-        groupId,
-        pdfBlob,
-        'PURCHASE',
-        {
+      const fileName = `purchase_certificate_${purchaseData.batchId}_${Date.now()}.pdf`;
+      const metadata = {
+        keyvalues: {
+          batchId: purchaseData.batchId,
+          transactionType: 'PURCHASE',
           from: purchaseData.from,
           to: purchaseData.to,
-          quantity: purchaseData.quantity,
-          price: purchaseData.quantity * purchaseData.unitPrice,
-          timestamp: new Date().toISOString()
+          quantity: purchaseData.quantity.toString(),
+          price: (purchaseData.quantity * purchaseData.unitPrice).toString(),
+          timestamp: new Date().toISOString(),
+          type: 'certificate',
+          groupId: groupId
         }
-      );
+      };
+      const ipfsHash = await singleStepGroupManager.uploadFileToGroup(groupId, pdfBlob, fileName, metadata);
 
       console.log(`Generated purchase certificate for batch ${purchaseData.batchId}, Group ID: ${groupId}`);
       return { pdfBlob, ipfsHash };
@@ -250,7 +256,7 @@ export class GroupCertificateGenerator {
     doc.setFont('helvetica', 'bold');
     doc.text('Verification URL:', 35, yPosition);
     doc.setFont('helvetica', 'normal');
-    doc.text(pinataGroupManager.getGroupVerificationUrl(groupId), 35, yPosition + 4);
+    doc.text(singleStepGroupManager.getGroupVerificationUrl(groupId), 35, yPosition + 4);
     yPosition += 12;
     
     // Official declaration
@@ -435,7 +441,7 @@ export class GroupCertificateGenerator {
     doc.setFont('helvetica', 'bold');
     doc.text('Verification URL:', 35, yPosition);
     doc.setFont('helvetica', 'normal');
-    doc.text(pinataGroupManager.getGroupVerificationUrl(groupId), 35, yPosition + 4);
+    doc.text(singleStepGroupManager.getGroupVerificationUrl(groupId), 35, yPosition + 4);
     yPosition += 12;
     
     // Official declaration

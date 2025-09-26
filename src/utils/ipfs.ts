@@ -1,40 +1,31 @@
 import axios from 'axios';
 import { PINATA_CONFIG } from '@/contracts/config';
 
+/**
+ * IPFS Service using Pinata
+ */
+export interface PinataMetadata {
+  name?: string;
+  keyvalues?: Record<string, string>;
+}
+
 export interface PinataResponse {
   IpfsHash: string;
   PinSize: number;
   Timestamp: string;
 }
 
-export interface PinataMetadata {
-  name?: string;
-  keyvalues?: Record<string, string>;
-}
-
 export class IPFSService {
-  private static instance: IPFSService;
   private apiKey: string;
   private apiSecret: string;
-  private jwt: string;
-  private gatewayUrl: string;
 
-  private constructor() {
+  constructor() {
     this.apiKey = PINATA_CONFIG.apiKey;
     this.apiSecret = PINATA_CONFIG.apiSecret;
-    this.jwt = PINATA_CONFIG.jwt;
-    this.gatewayUrl = PINATA_CONFIG.gatewayUrl;
-  }
-
-  public static getInstance(): IPFSService {
-    if (!IPFSService.instance) {
-      IPFSService.instance = new IPFSService();
-    }
-    return IPFSService.instance;
   }
 
   /**
-   * Upload a file to IPFS via Pinata
+   * Upload file to IPFS via Pinata
    */
   public async uploadFile(
     file: File | Blob,
@@ -49,7 +40,6 @@ export class IPFSService {
         formData.append('pinataMetadata', JSON.stringify(metadata));
       }
 
-      // Add pinata options
       const pinataOptions = {
         cidVersion: 1,
       };
@@ -65,7 +55,6 @@ export class IPFSService {
           },
         }
       );
-
       return response.data;
     } catch (error) {
       console.error('Error uploading file to IPFS:', error);
@@ -74,67 +63,26 @@ export class IPFSService {
   }
 
   /**
-   * Upload JSON data to IPFS via Pinata
-   */
-  public async uploadJSON(
-    data: any,
-    fileName: string,
-    metadata?: PinataMetadata
-  ): Promise<PinataResponse> {
-    try {
-      const response = await axios.post(
-        'https://api.pinata.cloud/pinning/pinJSONToIPFS',
-        {
-          pinataContent: data,
-          pinataMetadata: metadata ? {
-            name: fileName,
-            keyvalues: metadata.keyvalues || {}
-          } : {
-            name: fileName
-          },
-          pinataOptions: {
-            cidVersion: 1,
-          },
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'pinata_api_key': this.apiKey,
-            'pinata_secret_api_key': this.apiSecret,
-          },
-        }
-      );
-
-      return response.data;
-    } catch (error) {
-      console.error('Error uploading JSON to IPFS:', error);
-      throw new Error('Failed to upload JSON to IPFS');
-    }
-  }
-
-  /**
-   * Upload a PDF certificate to IPFS
+   * Upload certificate to IPFS
    */
   public async uploadCertificate(
     pdfBlob: Blob,
-    batchId: number,
-    batchData: any
+    batchId: string,
+    metadata?: any
   ): Promise<string> {
     try {
-      const fileName = `AgriTrace_Certificate_${batchId}.pdf`;
-      const metadata: PinataMetadata = {
+      const fileName = `certificate_${batchId}_${Date.now()}.pdf`;
+      const pinataMetadata: PinataMetadata = {
         name: fileName,
         keyvalues: {
-          batchId: batchId.toString(),
-          crop: batchData.crop || '',
-          variety: batchData.variety || '',
-          farmer: batchData.farmer || '',
+          batchId: batchId,
           type: 'certificate',
           timestamp: new Date().toISOString(),
-        },
+          ...metadata
+        }
       };
 
-      const response = await this.uploadFile(pdfBlob, fileName, metadata);
+      const response = await this.uploadFile(pdfBlob, fileName, pinataMetadata);
       return response.IpfsHash;
     } catch (error) {
       console.error('Error uploading certificate to IPFS:', error);
@@ -143,67 +91,48 @@ export class IPFSService {
   }
 
   /**
-   * Upload batch metadata to IPFS
+   * Unpin file from IPFS
    */
-  public async uploadBatchMetadata(
-    batchData: any,
-    batchId: number
-  ): Promise<string> {
+  public async unpinFile(ipfsHash: string): Promise<void> {
     try {
-      const fileName = `batch_metadata_${batchId}.json`;
-      const metadata: PinataMetadata = {
-        name: fileName,
-        keyvalues: {
-          batchId: batchId.toString(),
-          type: 'batch_metadata',
-          timestamp: new Date().toISOString(),
+      await axios.delete(`https://api.pinata.cloud/pinning/unpin/${ipfsHash}`, {
+        headers: {
+          'pinata_api_key': this.apiKey,
+          'pinata_secret_api_key': this.apiSecret,
         },
-      };
-
-      const response = await this.uploadJSON(batchData, fileName, metadata);
-      return response.IpfsHash;
+      });
+      console.log(`Unpinned file: ${ipfsHash}`);
     } catch (error) {
-      console.error('Error uploading batch metadata to IPFS:', error);
-      throw new Error('Failed to upload batch metadata to IPFS');
+      console.error('Error unpinning file from IPFS:', error);
+      throw new Error('Failed to unpin file from IPFS');
     }
   }
 
   /**
-   * Get file from IPFS via Pinata gateway
+   * Update pinned file (unpin old, pin new)
    */
-  public getFileUrl(ipfsHash: string): string {
-    return `${this.gatewayUrl}${ipfsHash}`;
-  }
-
-  /**
-   * Fetch JSON data from IPFS
-   */
-  public async fetchJSON(ipfsHash: string): Promise<any> {
+  public async updatePinnedFile(
+    oldIpfsHash: string,
+    file: File | Blob,
+    fileName: string,
+    metadata?: PinataMetadata
+  ): Promise<PinataResponse> {
     try {
-      const url = this.getFileUrl(ipfsHash);
-      const response = await axios.get(url);
-      return response.data;
+      // Unpin old file
+      if (oldIpfsHash) {
+        await this.unpinFile(oldIpfsHash);
+      }
+
+      // Upload new file
+      return await this.uploadFile(file, fileName, metadata);
     } catch (error) {
-      console.error('Error fetching JSON from IPFS:', error);
-      throw new Error('Failed to fetch data from IPFS');
+      console.error('Error updating pinned file:', error);
+      throw new Error('Failed to update pinned file');
     }
   }
 
   /**
-   * Check if a file exists on IPFS
-   */
-  public async checkFileExists(ipfsHash: string): Promise<boolean> {
-    try {
-      const url = this.getFileUrl(ipfsHash);
-      const response = await axios.head(url);
-      return response.status === 200;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
-   * Get file info from Pinata
+   * Get file info from IPFS
    */
   public async getFileInfo(ipfsHash: string): Promise<any> {
     try {
@@ -216,84 +145,72 @@ export class IPFSService {
           },
         }
       );
-
-      return response.data.rows[0] || null;
+      return response.data;
     } catch (error) {
-      console.error('Error getting file info from Pinata:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Update an existing pinned file by unpinning the old one and pinning the new one
-   */
-  public async updatePinnedFile(
-    oldIpfsHash: string,
-    newFile: File | Blob,
-    fileName: string,
-    metadata?: PinataMetadata
-  ): Promise<PinataResponse> {
-    try {
-      // First, unpin the old file
-      await this.unpinFile(oldIpfsHash);
-      
-      // Then pin the new file
-      const newResponse = await this.uploadFile(newFile, fileName, metadata);
-      
-      return newResponse;
-    } catch (error) {
-      console.error('Error updating pinned file:', error);
-      throw new Error('Failed to update pinned file');
-    }
-  }
-
-  /**
-   * Unpin a file from Pinata
-   */
-  public async unpinFile(ipfsHash: string): Promise<boolean> {
-    try {
-      const response = await axios.delete(
-        `https://api.pinata.cloud/pinning/unpin/${ipfsHash}`,
-        {
-          headers: {
-            'pinata_api_key': this.apiKey,
-            'pinata_secret_api_key': this.apiSecret,
-          },
-        }
-      );
-
-      return response.status === 200;
-    } catch (error) {
-      console.error('Error unpinning file:', error);
-      return false;
+      console.error('Error getting file info from IPFS:', error);
+      throw new Error('Failed to get file info from IPFS');
     }
   }
 }
 
 // Export singleton instance
-export const ipfsService = IPFSService.getInstance();
+export const ipfsService = new IPFSService();
 
-// Convenience functions
-export const uploadToIPFS = (file: File | Blob, fileName: string, metadata?: PinataMetadata) => {
-  return ipfsService.uploadFile(file, fileName, metadata);
-};
+/**
+ * Upload batch metadata to IPFS
+ */
+export async function uploadBatchMetadataToIPFS(batchData: any, batchId: string): Promise<string> {
+  try {
+    const metadata = {
+      batchId: batchId,
+      farmer: batchData.farmer,
+      crop: batchData.crop,
+      variety: batchData.variety,
+      harvestQuantity: batchData.harvestQuantity,
+      harvestDate: batchData.harvestDate,
+      grading: batchData.grading,
+      certification: batchData.certification,
+      price: batchData.price,
+      timestamp: new Date().toISOString()
+    };
 
-export const uploadJSONToIPFS = (data: any, fileName: string, metadata?: PinataMetadata) => {
-  return ipfsService.uploadJSON(data, fileName, metadata);
-};
+    const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], {
+      type: 'application/json'
+    });
 
-export const uploadCertificateToIPFS = (pdfBlob: Blob, batchId: number, batchData: any) => {
-  return ipfsService.uploadCertificate(pdfBlob, batchId, batchData);
-};
+    return await ipfsService.uploadFile(
+      metadataBlob,
+      `batch_metadata_${batchId}.json`,
+      {
+        name: `batch_metadata_${batchId}`,
+        keyvalues: {
+          batchId: batchId,
+          type: 'metadata',
+          timestamp: new Date().toISOString()
+        }
+      }
+    ).then(response => response.IpfsHash);
+  } catch (error) {
+    console.error('Error uploading batch metadata to IPFS:', error);
+    throw new Error('Failed to upload batch metadata to IPFS');
+  }
+}
 
-export const uploadBatchMetadataToIPFS = (batchData: any, batchId: number) => {
-  return ipfsService.uploadBatchMetadata(batchData, batchId);
-};
-
-export const getIPFSFileUrl = (ipfsHash: string) => {
-  return ipfsService.getFileUrl(ipfsHash);
-};
-
-export const fetchFromIPFS = (ipfsHash: string) => {
-  return ipfsService.fetchJSON(ipfsHash);
-};
+/**
+ * Get IPFS file URL with validation
+ */
+export function getIPFSFileUrl(ipfsHash: string): string {
+  // Validate and clean the IPFS hash
+  if (!ipfsHash || ipfsHash.length < 10) {
+    throw new Error('Invalid IPFS hash format');
+  }
+  
+  // Clean the hash (remove any URL parts)
+  const cleanHash = ipfsHash.replace(/^.*\/ipfs\//, '').replace(/[^a-zA-Z0-9]/g, '');
+  
+  if (cleanHash.length < 10) {
+    throw new Error('Invalid IPFS hash format - hash appears to be malformed');
+  }
+  
+  return `https://gateway.pinata.cloud/ipfs/${cleanHash}`;
+}

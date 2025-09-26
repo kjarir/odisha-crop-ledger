@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { properGroupManager } from '@/utils/properGroupManager';
+import { singleStepGroupManager } from '@/utils/singleStepGroupManager';
 import { 
   ShoppingCart, 
   Package, 
@@ -102,23 +102,15 @@ export const SimplePurchaseModal: React.FC<SimplePurchaseModalProps> = ({
       }
       
       // Generate purchase certificate and add to group
-      const { pdfBlob, ipfsHash } = await properGroupManager.uploadPurchaseCertificate(
+      const { pdfBlob, ipfsHash } = await singleStepGroupManager.uploadPurchaseCertificate(
         batch.group_id,
-        `${batch.farmer} - ${batch.crop_type} ${batch.variety}`, // Group name
         {
           batchId: batch.id,
           from: currentOwner,
           to: buyerName,
           quantity: quantity,
-          unitPrice: unitPrice,
-          deliveryAddress: deliveryAddress,
-          productDetails: {
-            cropType: batch.crop_type,
-            variety: batch.variety,
-            harvestDate: batch.harvest_date,
-            grading: batch.grading,
-            certification: batch.certification
-          }
+          pricePerKg: unitPrice,
+          timestamp: new Date().toISOString()
         }
       );
 

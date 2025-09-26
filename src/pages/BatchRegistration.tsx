@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWeb3 } from '@/contexts/Web3Context';
 import { useContract } from '@/hooks/useContract';
-import { properGroupManager } from '@/utils/properGroupManager';
+import { singleStepGroupManager } from '@/utils/singleStepGroupManager';
 import { uploadBatchMetadataToIPFS } from '@/utils/ipfs';
 import { BatchInput, CONTRACT_ADDRESS } from '@/contracts/config';
 import AgriTraceABI from '@/contracts/AgriTrace.json';
@@ -89,19 +89,31 @@ export const BatchRegistration = () => {
         currentOwner: account || '',
       };
 
-      // Step 2: Generate harvest certificate and create group
+      // Step 2: Generate harvest certificate and create group using SINGLE-STEP method
       const tempBatchId = Date.now(); // Temporary ID for file naming
-      const { pdfBlob, groupId, ipfsHash } = await properGroupManager.uploadHarvestCertificate({
+      
+      // Debug the data being passed
+      console.log('🔍 DEBUG: BatchRegistration data:', {
+        account: account,
+        formData: formData,
+        tempBatchId: tempBatchId.toString()
+      });
+      
+      const harvestData = {
         batchId: tempBatchId.toString(),
         farmerName: account || 'Unknown Farmer',
-        cropType: formData.cropType,
-        variety: formData.variety,
+        cropType: formData.cropType || 'Unknown Crop',
+        variety: formData.variety || 'Unknown Variety',
         harvestQuantity: parseFloat(formData.harvestQuantity),
         harvestDate: formData.harvestDate,
         grading: formData.grading,
         certification: formData.certification,
         pricePerKg: parseFloat(formData.pricePerKg)
-      });
+      };
+      
+      console.log('🔍 DEBUG: Harvest data being passed:', harvestData);
+      
+      const { pdfBlob, groupId, ipfsHash } = await singleStepGroupManager.uploadHarvestCertificate(harvestData);
       
       // Step 3: Upload batch metadata to IPFS
       const metadataIpfsHash = await uploadBatchMetadataToIPFS(batchData, tempBatchId);

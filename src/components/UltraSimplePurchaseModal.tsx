@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { purchaseTransactionCreator } from '@/utils/purchaseTransactionCreator';
+import { singleStepGroupManager } from '@/utils/singleStepGroupManager';
 import { 
   ShoppingCart, 
   Package, 
@@ -60,31 +61,26 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
       const deliveryFee = totalPrice > 1000 ? 0 : 50;
       const finalTotal = totalPrice + deliveryFee;
 
-      // Get current owners to determine who to buy from
-      const currentOwners = await purchaseTransactionCreator.getCurrentOwners(batch.id);
-      const currentOwner = Object.keys(currentOwners)[0] || batch.farmer || 'Unknown Farmer';
-      const buyerName = user.email || user.name || 'Unknown Buyer';
-      
-      // Verify purchase is valid
-      const verification = await purchaseTransactionCreator.verifyPurchase(
-        batch.id,
-        currentOwner,
-        quantity
-      );
-      
-      if (!verification.isValid) {
-        throw new Error(verification.error || 'Invalid purchase');
+      // For the new group-based system, we don't need complex transaction verification
+      // Just check if the batch has a group_id
+      if (!batch.group_id) {
+        throw new Error('Batch does not have a group ID - cannot process purchase');
       }
       
-      // Create purchase transaction
-      await purchaseTransactionCreator.createPurchaseTransaction(
-        batch.id,
-        currentOwner,
-        buyerName,
-        quantity,
-        unitPrice,
-        address,
-        `Purchase of ${quantity}kg at ₹${unitPrice}/kg`
+      const buyerName = user.email || user.name || 'Unknown Buyer';
+      const currentOwner = batch.farmer_name || 'Unknown Farmer';
+      
+      // Use the single-step group manager for purchase
+      const { pdfBlob, ipfsHash } = await singleStepGroupManager.uploadPurchaseCertificate(
+        batch.group_id,
+        {
+          batchId: batch.id,
+          from: currentOwner,
+          to: buyerName,
+          quantity: quantity,
+          pricePerKg: unitPrice,
+          timestamp: new Date().toISOString()
+        }
       );
 
       // Update batch status
