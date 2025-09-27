@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/utils/globalSupabaseFix';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -65,7 +65,7 @@ export const RetailerMarketplace = () => {
       console.log(`🔍 DEBUG: Fetching batches available in distributor-retailer marketplace...`);
       
       // Get batches that are available in distributor-retailer marketplace
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('marketplace_availability')
         .select(`
           *,

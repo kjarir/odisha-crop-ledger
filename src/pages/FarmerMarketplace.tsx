@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/utils/globalSupabaseFix';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,7 +39,7 @@ export const FarmerMarketplace = () => {
   const fetchBatches = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('batches')
         .select(`
           *,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/utils/globalSupabaseFix';
 import { SimplePurchaseManager } from '@/utils/simplePurchaseManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,7 +41,7 @@ export default function DistributorDashboard() {
 
   const fetchProfile = async () => {
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await db
         .from('profiles')
         .select('*')
         .eq('user_id', user?.id)

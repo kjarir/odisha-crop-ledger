@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/utils/globalSupabaseFix';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,7 +40,7 @@ export const DistributorMarketplace = () => {
     try {
       setLoading(true);
       // Get batches that are owned by distributors (not farmers)
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('batches')
         .select(`
           *,
