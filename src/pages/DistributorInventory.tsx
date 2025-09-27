@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Package, MapPin, Calendar, DollarSign, Eye, Edit, Plus, Save, X, User, History, FileText, Download } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/utils/supabaseFix';
 import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { transactionManager } from '@/utils/transactionManager';
@@ -55,7 +55,7 @@ export const DistributorInventory = () => {
       console.log('🔍 DEBUG: Fetching inventory for user:', user?.id);
       
       // Get batches owned by this distributor with farmer profile information
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('batches')
         .select(`
           *,

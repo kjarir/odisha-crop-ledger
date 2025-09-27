@@ -69,7 +69,7 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
       };
 
       const [batchQR, verificationQRCode, certificateQRCode] = await Promise.all([
-        generateQRCodeDataURL(batchData),
+        Promise.resolve(generateQRCodeDataURL(batchData)),
         generateBatchVerificationQR(batchId),
         ipfsHash ? generateCertificateQR(ipfsHash) : Promise.resolve('')
       ]);

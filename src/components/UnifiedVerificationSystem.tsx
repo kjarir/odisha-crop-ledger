@@ -80,7 +80,7 @@ export const UnifiedVerificationSystem: React.FC = () => {
 
   const loadRecentBatches = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('batches')
         .select('id, crop_type, variety, harvest_quantity, created_at')
         .order('created_at', { ascending: false })

@@ -3,10 +3,17 @@
  */
 
 export interface QRCodeData {
-  type: 'batch' | 'certificate' | 'transaction';
-  id: string;
-  ipfsHash: string;
-  timestamp: string;
+  batchId: string;
+  cropType: string;
+  variety: string;
+  harvestDate: string;
+  farmerId: string;
+  blockchainHash?: string;
+  ipfsHash?: string;
+  verificationUrl?: string;
+  type?: 'batch' | 'certificate' | 'transaction';
+  id?: string;
+  timestamp?: string;
   metadata?: any;
 }
 
@@ -91,7 +98,7 @@ export function generateVerificationUrl(qrData: QRCodeData): string {
 /**
  * Generate QR code data URL for display
  */
-export function generateQRCodeDataURL(data: string, size: number = 200): string {
+export function generateQRCodeDataURL(data: QRCodeData | string, size: number = 200): string {
   // This is a placeholder - in a real implementation, you'd use a QR code library
   // For now, we'll return a data URL that represents the QR code
   const canvas = document.createElement('canvas');
@@ -109,7 +116,8 @@ export function generateQRCodeDataURL(data: string, size: number = 200): string 
     ctx.font = '12px Arial';
     ctx.textAlign = 'center';
     ctx.fillText('QR Code', size / 2, size / 2);
-    ctx.fillText(String(data).substring(0, 20), size / 2, size / 2 + 20);
+    const displayText = typeof data === 'string' ? data : data.batchId || data.id || 'QR';
+    ctx.fillText(displayText.substring(0, 20), size / 2, size / 2 + 20);
   }
   
   return canvas.toDataURL();
@@ -118,30 +126,27 @@ export function generateQRCodeDataURL(data: string, size: number = 200): string 
 /**
  * Generate batch verification QR code
  */
-export function generateBatchVerificationQR(batchId: string, ipfsHash: string): QRCodeData {
-  return generateBatchQRData(batchId, ipfsHash, {
-    verificationUrl: generateVerificationUrl(generateBatchQRData(batchId, ipfsHash))
-  });
+export function generateBatchVerificationQR(batchId: string): Promise<string> {
+  const verificationUrl = `${window.location.origin}/verify?batchId=${batchId}`;
+  return Promise.resolve(generateQRCodeDataURL(verificationUrl));
 }
 
 /**
  * Generate certificate QR code
  */
-export function generateCertificateQR(certificateId: string, ipfsHash: string): QRCodeData {
-  return generateCertificateQRData(certificateId, ipfsHash, {
-    verificationUrl: generateVerificationUrl(generateCertificateQRData(certificateId, ipfsHash))
-  });
+export function generateCertificateQR(ipfsHash: string): Promise<string> {
+  const certificateUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+  return Promise.resolve(generateQRCodeDataURL(certificateUrl));
 }
 
 /**
  * Download QR code as image
  */
-export function downloadQRCode(qrData: QRCodeData, filename?: string): void {
+export function downloadQRCode(dataUrl: string, filename: string): void {
   try {
-    const dataUrl = generateQRCodeDataURL(JSON.stringify(qrData));
     const link = document.createElement('a');
     link.href = dataUrl;
-    link.download = filename || `qr_code_${qrData.type}_${qrData.id}.png`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

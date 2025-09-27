@@ -258,8 +258,8 @@ export const SupplyChainDisplay: React.FC<SupplyChainDisplayProps> = ({ batchId,
               <p className="text-blue-900">
                 {transactions.length > 0 
                   ? Math.max(0, (batch.harvest_quantity || 0) - transactions
-                      .filter(tx => tx.type === 'purchase' || tx.type === 'transfer')
-                      .reduce((sum, tx) => sum + tx.quantity, 0)) 
+                      .filter(tx => tx.type === 'PURCHASE' || tx.type === 'TRANSFER')
+                      .reduce((sum, tx) => sum + tx.quantity, 0))
                   : batch.harvest_quantity || 0} kg
               </p>
             </div>
