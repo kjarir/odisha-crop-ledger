@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { MarketplaceManager } from '@/utils/marketplaceManager';
+import { SimplePurchaseManager } from '@/utils/simplePurchaseManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,15 +18,10 @@ interface Batch {
   quality_score: number;
   marketplace_status: string;
   farmer_id?: string;
-}
-
-interface MarketplaceBatch {
-  batch_id: string;
-  batches: Batch & {
-    profiles: {
-      full_name: string;
-      farm_location: string;
-    };
+  current_owner?: string;
+  profiles?: {
+    full_name: string;
+    farm_location: string;
   };
 }
 
@@ -34,20 +29,15 @@ export default function DistributorDashboard() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [inventory, setInventory] = useState<Batch[]>([]);
-  const [marketplaceBatches, setMarketplaceBatches] = useState<MarketplaceBatch[]>([]);
+  const [availableBatches, setAvailableBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (user) {
       fetchProfile();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (profile?.id) {
       fetchData();
     }
-  }, [profile]);
+  }, [user]);
 
   const fetchProfile = async () => {
     try {
@@ -65,20 +55,20 @@ export default function DistributorDashboard() {
   };
 
   const fetchData = async () => {
+    if (!user?.id) return;
+    
     setLoading(true);
     try {
-      // Fetch distributor inventory
-      if (profile?.id) {
-        const inventoryResult = await MarketplaceManager.getDistributorInventory(profile.id);
-        if (inventoryResult.success) {
-          setInventory(inventoryResult.data);
-        }
+      // Get user's inventory using user.id (not profile.id)
+      const inventoryResult = await SimplePurchaseManager.getUserBatches(user.id);
+      if (inventoryResult.success) {
+        setInventory(inventoryResult.data);
       }
 
-      // Fetch farmer marketplace batches
-      const marketplaceResult = await MarketplaceManager.getFarmerMarketplaceBatches();
-      if (marketplaceResult.success) {
-        setMarketplaceBatches(marketplaceResult.data);
+      // Get available batches for purchase
+      const availableResult = await SimplePurchaseManager.getAvailableBatches(user.id);
+      if (availableResult.success) {
+        setAvailableBatches(availableResult.data);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -88,54 +78,30 @@ export default function DistributorDashboard() {
     }
   };
 
-  const handlePurchaseFromFarmer = async (batch: Batch) => {
-    if (!profile?.id) {
-      toast.error('Profile not found');
+  const handlePurchase = async (batch: Batch) => {
+    if (!user?.id) {
+      toast.error('Please log in to purchase');
       return;
     }
 
     try {
-      // Purchase batch
-      const purchaseResult = await MarketplaceManager.purchaseFromFarmerMarketplace(
+      const result = await SimplePurchaseManager.purchaseBatch(
         batch.id,
-        profile.id
-      );
-
-      if (!purchaseResult.success) {
-        throw purchaseResult.error;
-      }
-
-      // Create transaction record
-      await MarketplaceManager.createTransaction(
-        batch.id,
-        batch.farmer_id || '',
-        profile.id,
-        'farmer_to_distributor',
+        user.id,
+        batch.farmer_id || batch.current_owner || 'unknown',
         batch.harvest_quantity,
         batch.total_price
       );
 
-      toast.success('Batch purchased successfully!');
-      fetchData(); // Refresh data
-    } catch (error) {
-      console.error('Error purchasing batch:', error);
-      toast.error('Failed to purchase batch');
-    }
-  };
-
-  const handleMoveToRetailerMarketplace = async (batch: Batch) => {
-    try {
-      const result = await MarketplaceManager.moveToRetailerMarketplace(batch.id);
-      
-      if (!result.success) {
+      if (result.success) {
+        toast.success(`Successfully purchased ${batch.crop_type}!`);
+        fetchData(); // Refresh data
+      } else {
         throw result.error;
       }
-
-      toast.success('Batch moved to retailer marketplace!');
-      fetchData(); // Refresh data
     } catch (error) {
-      console.error('Error moving batch:', error);
-      toast.error('Failed to move batch to retailer marketplace');
+      console.error('Purchase error:', error);
+      toast.error('Failed to purchase batch');
     }
   };
 
@@ -154,7 +120,7 @@ export default function DistributorDashboard() {
 
       {/* Inventory Section */}
       <div className="space-y-4">
-        <h2 className="text-2xl font-semibold text-gray-800">My Inventory</h2>
+        <h2 className="text-2xl font-semibold text-gray-800">My Inventory ({inventory.length})</h2>
         {inventory.length === 0 ? (
           <Card>
             <CardContent className="p-6">
@@ -175,12 +141,9 @@ export default function DistributorDashboard() {
                   <p><strong>Price:</strong> ₹{batch.price_per_kg}/kg</p>
                   <p><strong>Total:</strong> ₹{batch.total_price}</p>
                   <p><strong>Quality Score:</strong> {batch.quality_score || 'N/A'}</p>
-                  <Button 
-                    onClick={() => handleMoveToRetailerMarketplace(batch)}
-                    className="w-full mt-4"
-                  >
-                    Sell to Retailers
-                  </Button>
+                  <Badge variant="outline" className="mt-2">
+                    Owned
+                  </Badge>
                 </CardContent>
               </Card>
             ))}
@@ -188,45 +151,42 @@ export default function DistributorDashboard() {
         )}
       </div>
 
-      {/* Farmer Marketplace Section */}
+      {/* Available Batches Section */}
       <div className="space-y-4">
-        <h2 className="text-2xl font-semibold text-gray-800">Available from Farmers</h2>
-        {marketplaceBatches.length === 0 ? (
+        <h2 className="text-2xl font-semibold text-gray-800">Available for Purchase ({availableBatches.length})</h2>
+        {availableBatches.length === 0 ? (
           <Card>
             <CardContent className="p-6">
-              <p className="text-gray-500">No batches available from farmers</p>
+              <p className="text-gray-500">No batches available for purchase</p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {marketplaceBatches.map((item) => {
-              const batch = item.batches;
-              return (
-                <Card key={batch.id}>
-                  <CardHeader>
-                    <CardTitle className="text-lg">
-                      {batch.crop_type} - {batch.variety}
-                    </CardTitle>
-                    <p className="text-sm text-gray-600">
-                      From: {batch.profiles?.full_name || 'Unknown Farmer'}
-                    </p>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <p><strong>Quantity:</strong> {batch.harvest_quantity}kg</p>
-                    <p><strong>Price:</strong> ₹{batch.price_per_kg}/kg</p>
-                    <p><strong>Total:</strong> ₹{batch.total_price}</p>
-                    <p><strong>Harvest Date:</strong> {new Date(batch.harvest_date).toLocaleDateString()}</p>
-                    <p><strong>Quality Score:</strong> {batch.quality_score || 'N/A'}</p>
-                    <Button 
-                      onClick={() => handlePurchaseFromFarmer(batch)}
-                      className="w-full mt-4"
-                    >
-                      Purchase from Farmer
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {availableBatches.map((batch) => (
+              <Card key={batch.id}>
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    {batch.crop_type} - {batch.variety}
+                  </CardTitle>
+                  <p className="text-sm text-gray-600">
+                    From: {batch.profiles?.full_name || 'Unknown Farmer'}
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p><strong>Quantity:</strong> {batch.harvest_quantity}kg</p>
+                  <p><strong>Price:</strong> ₹{batch.price_per_kg}/kg</p>
+                  <p><strong>Total:</strong> ₹{batch.total_price}</p>
+                  <p><strong>Harvest Date:</strong> {new Date(batch.harvest_date).toLocaleDateString()}</p>
+                  <p><strong>Quality Score:</strong> {batch.quality_score || 'N/A'}</p>
+                  <Button 
+                    onClick={() => handlePurchase(batch)}
+                    className="w-full mt-4"
+                  >
+                    Purchase for ₹{batch.total_price}
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         )}
       </div>

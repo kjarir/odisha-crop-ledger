@@ -10,28 +10,27 @@ export class MarketplaceManager {
    */
   static async purchaseFromFarmerMarketplace(batchId: string, distributorId: string) {
     try {
+      console.log(`🔍 DEBUG: Purchasing batch ${batchId} for distributor ${distributorId}`);
+      
       // Update batch ownership to distributor
-      const { error: batchError } = await (supabase as any)
+      const { data: batchData, error: batchError } = await (supabase as any)
         .from('batches')
         .update({
           current_owner: distributorId,
           marketplace_status: 'distributor_inventory',
-          status: 'available'
+          status: 'available',
+          updated_at: new Date().toISOString()
         })
-        .eq('id', batchId);
+        .eq('id', batchId)
+        .select();
 
-      if (batchError) throw batchError;
+      if (batchError) {
+        console.error('🔍 ERROR: Batch update failed:', batchError);
+        throw batchError;
+      }
 
-      // Remove from farmer-distributor marketplace
-      const { error: removeError } = await (supabase as any)
-        .from('marketplace_availability')
-        .update({ is_available: false })
-        .eq('batch_id', batchId)
-        .eq('marketplace_type', 'farmer_distributor');
-
-      if (removeError) throw removeError;
-
-      return { success: true };
+      console.log('🔍 DEBUG: Batch updated successfully:', batchData);
+      return { success: true, data: batchData };
     } catch (error) {
       console.error('Error purchasing from farmer marketplace:', error);
       return { success: false, error };
@@ -43,28 +42,25 @@ export class MarketplaceManager {
    */
   static async moveToRetailerMarketplace(batchId: string) {
     try {
+      console.log(`🔍 DEBUG: Moving batch ${batchId} to retailer marketplace`);
+      
       // Update batch marketplace status
-      const { error: batchError } = await (supabase as any)
+      const { data: batchData, error: batchError } = await (supabase as any)
         .from('batches')
         .update({
-          marketplace_status: 'distributor_retailer_marketplace'
+          marketplace_status: 'distributor_retailer_marketplace',
+          updated_at: new Date().toISOString()
         })
-        .eq('id', batchId);
+        .eq('id', batchId)
+        .select();
 
-      if (batchError) throw batchError;
+      if (batchError) {
+        console.error('🔍 ERROR: Failed to update batch marketplace status:', batchError);
+        throw batchError;
+      }
 
-      // Add to distributor-retailer marketplace
-      const { error: marketplaceError } = await (supabase as any)
-        .from('marketplace_availability')
-        .insert({
-          batch_id: batchId,
-          marketplace_type: 'distributor_retailer',
-          is_available: true
-        });
-
-      if (marketplaceError) throw marketplaceError;
-
-      return { success: true };
+      console.log('🔍 DEBUG: Batch moved to retailer marketplace successfully:', batchData);
+      return { success: true, data: batchData };
     } catch (error) {
       console.error('Error moving to retailer marketplace:', error);
       return { success: false, error };
@@ -141,31 +137,38 @@ export class MarketplaceManager {
    */
   static async getFarmerMarketplaceBatches() {
     try {
+      // Get available batches from farmer marketplace
       const { data, error } = await (supabase as any)
-        .from('marketplace_availability')
+        .from('batches')
         .select(`
-          batch_id,
-          batches (
-            id,
-            crop_type,
-            variety,
-            harvest_quantity,
-            price_per_kg,
-            total_price,
-            harvest_date,
-            quality_score,
-            farmer_id,
-            profiles!batches_farmer_id_fkey (
-              full_name,
-              farm_location
-            )
+          id,
+          crop_type,
+          variety,
+          harvest_quantity,
+          price_per_kg,
+          total_price,
+          harvest_date,
+          quality_score,
+          farmer_id,
+          marketplace_status,
+          current_owner,
+          profiles!batches_farmer_id_fkey (
+            full_name,
+            farm_location
           )
         `)
-        .eq('marketplace_type', 'farmer_distributor')
-        .eq('is_available', true);
+        .eq('marketplace_status', 'farmer_marketplace')
+        .eq('status', 'available');
 
       if (error) throw error;
-      return { success: true, data: data || [] };
+      
+      // Transform data to match expected format
+      const transformedData = (data || []).map(batch => ({
+        batch_id: batch.id,
+        batches: batch
+      }));
+
+      return { success: true, data: transformedData };
     } catch (error) {
       console.error('Error fetching farmer marketplace batches:', error);
       return { success: false, data: [] };
@@ -177,31 +180,37 @@ export class MarketplaceManager {
    */
   static async getDistributorMarketplaceBatches() {
     try {
+      // Get available batches from distributor marketplace
       const { data, error } = await (supabase as any)
-        .from('marketplace_availability')
+        .from('batches')
         .select(`
-          batch_id,
-          batches (
-            id,
-            crop_type,
-            variety,
-            harvest_quantity,
-            price_per_kg,
-            total_price,
-            harvest_date,
-            quality_score,
-            current_owner,
-            profiles!batches_current_owner_fkey (
-              full_name,
-              farm_location
-            )
+          id,
+          crop_type,
+          variety,
+          harvest_quantity,
+          price_per_kg,
+          total_price,
+          harvest_date,
+          quality_score,
+          current_owner,
+          marketplace_status,
+          profiles!batches_current_owner_fkey (
+            full_name,
+            farm_location
           )
         `)
-        .eq('marketplace_type', 'distributor_retailer')
-        .eq('is_available', true);
+        .eq('marketplace_status', 'distributor_retailer_marketplace')
+        .eq('status', 'available');
 
       if (error) throw error;
-      return { success: true, data: data || [] };
+      
+      // Transform data to match expected format
+      const transformedData = (data || []).map(batch => ({
+        batch_id: batch.id,
+        batches: batch
+      }));
+
+      return { success: true, data: transformedData };
     } catch (error) {
       console.error('Error fetching distributor marketplace batches:', error);
       return { success: false, data: [] };
