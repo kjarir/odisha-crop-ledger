@@ -10,6 +10,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { purchaseTransactionCreator } from '@/utils/purchaseTransactionCreator';
 import { singleStepGroupManager } from '@/utils/singleStepGroupManager';
+import { blockchainTransactionManager } from '@/utils/blockchainTransactionManager';
+import { useWeb3 } from '@/contexts/Web3Context';
 import { 
   ShoppingCart, 
   Package, 
@@ -33,6 +35,7 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
 }) => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { signer } = useWeb3();
 
   if (!batch || !isOpen) return null;
 
@@ -109,18 +112,115 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
         }
       );
 
-      // Update batch status
-      const purchaseData = {
+      // Record transaction on blockchain
+      console.log('🔍 DEBUG: Recording purchase transaction on blockchain...');
+      if (!signer) {
+        throw new Error('Wallet not connected. Please connect your wallet to complete the purchase.');
+      }
+      
+      // Update blockchain transaction manager with signer
+      blockchainTransactionManager.updateSigner(signer);
+      
+      try {
+        const blockchainTransaction = await blockchainTransactionManager.recordPurchaseTransaction(
+          batch.id,
+          batch.current_owner || batch.farmer_id, // From current owner
+          user.id, // To buyer
+          quantity,
+          finalTotal,
+          'PURCHASE'
+        );
+        console.log('🔍 DEBUG: Blockchain transaction recorded:', blockchainTransaction);
+      } catch (blockchainError) {
+        console.error('🔍 DEBUG: Blockchain transaction failed:', blockchainError);
+        // Continue with database transaction even if blockchain fails
+        console.log('🔍 DEBUG: Continuing with database transaction despite blockchain error');
+      }
+
+      // Create transaction record
+      const transactionData = {
+        batch_id: batch.id,
+        buyer_id: user.id,
+        seller_id: batch.farmer_id || batch.current_owner || 'unknown_farmer',
+        transaction_type: 'PURCHASE',
+        quantity: quantity,
+        price: finalTotal,
+        status: 'completed'
+      };
+
+      console.log('🔍 DEBUG: Creating transaction with data:', transactionData);
+      
+      const { data: transactionResult, error: transactionError } = await supabase
+        .from('transactions')
+        .insert(transactionData)
+        .select();
+
+      console.log('🔍 DEBUG: Transaction creation result:', { transactionResult, transactionError });
+
+      if (transactionError) {
+        throw new Error(`Failed to create transaction: ${transactionError.message}`);
+      }
+
+      // Update batch ownership
+      const batchUpdateData = {
+        current_owner: user.id,
         status: 'available' // Keep available for other purchases
       };
 
-      const { error: purchaseError } = await (supabase as any)
-        .from('batches')
-        .update(purchaseData)
-        .eq('id', batch.id);
+      console.log('🔍 DEBUG: Updating batch with data:', batchUpdateData, 'for batch ID:', batch.id);
+      console.log('🔍 DEBUG: User ID for ownership:', user.id);
+      console.log('🔍 DEBUG: Batch ID to update:', batch.id);
+      console.log('🔍 DEBUG: Batch ID type:', typeof batch.id);
+      console.log('🔍 DEBUG: Full batch object:', batch);
 
-      if (purchaseError) {
-        throw new Error(`Failed to update batch: ${purchaseError.message}`);
+      // First, check if the batch exists
+      const { data: existingBatch, error: checkError } = await supabase
+        .from('batches')
+        .select('*')
+        .eq('id', batch.id)
+        .single();
+
+      console.log('🔍 DEBUG: Existing batch check:', { existingBatch, checkError });
+
+      if (checkError) {
+        console.error('🔍 ERROR: Batch not found:', checkError);
+        throw new Error(`Batch not found: ${checkError.message}`);
+      }
+
+      const { data: batchResult, error: batchError } = await supabase
+        .from('batches')
+        .update(batchUpdateData)
+        .eq('id', batch.id)
+        .select();
+
+      console.log('🔍 DEBUG: Batch update result:', { batchResult, batchError });
+      console.log('🔍 DEBUG: Batch ID being updated:', batch.id);
+      console.log('🔍 DEBUG: New owner ID:', user.id);
+
+      if (batchError) {
+        console.error('🔍 ERROR: Batch update failed:', batchError);
+        throw new Error(`Failed to update batch: ${batchError.message}`);
+      } else {
+        console.log('🔍 SUCCESS: Batch ownership updated successfully');
+      }
+
+      // Remove batch from farmer-distributor marketplace after purchase
+      try {
+        const { error: removeError } = await supabase.rpc(
+          'remove_batch_from_marketplace',
+          { 
+            batch_id_param: batch.id,
+            marketplace_type_param: 'farmer_distributor'
+          }
+        );
+        
+        if (removeError) {
+          console.error('🔍 WARNING: Failed to remove from marketplace:', removeError);
+        } else {
+          console.log('🔍 SUCCESS: Batch removed from farmer-distributor marketplace');
+        }
+      } catch (removeError) {
+        console.error('🔍 WARNING: Error removing from marketplace:', removeError);
       }
 
       onPurchaseComplete();

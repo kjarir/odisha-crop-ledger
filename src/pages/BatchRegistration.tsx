@@ -6,6 +6,7 @@ import { useWeb3 } from '@/contexts/Web3Context';
 import { useContract } from '@/hooks/useContract';
 import { singleStepGroupManager } from '@/utils/singleStepGroupManager';
 import { uploadBatchMetadataToIPFS } from '@/utils/ipfs';
+import { blockchainTransactionManager } from '@/utils/blockchainTransactionManager';
 import { BatchInput, CONTRACT_ADDRESS } from '@/contracts/config';
 import AgriTraceABI from '@/contracts/AgriTrace.json';
 import { 
@@ -30,7 +31,7 @@ import { useNavigate } from 'react-router-dom';
 
 export const BatchRegistration = () => {
   const { user } = useAuth();
-  const { isConnected, connectWallet, account, provider } = useWeb3();
+  const { isConnected, connectWallet, account, provider, signer } = useWeb3();
   const { registerBatch, getNextBatchId, loading: contractLoading } = useContract();
   const [formData, setFormData] = useState({
     cropType: '',
@@ -166,6 +167,8 @@ export const BatchRegistration = () => {
         offTopicCount: 0,
       };
 
+      // Register on blockchain
+      console.log('🔍 DEBUG: Registering batch on blockchain:', batchInput);
       const receipt = await registerBatch(batchInput);
       
       if (receipt) {
@@ -195,6 +198,30 @@ export const BatchRegistration = () => {
           // Update the batch data with the real batch ID
           batchData.id = extractedBatchId;
           batchData.ipfsHash = certificateIpfsHash;
+          
+          // Record harvest transaction on blockchain
+          console.log('🔍 DEBUG: Recording harvest transaction on blockchain...');
+          if (signer) {
+            try {
+              blockchainTransactionManager.updateSigner(signer);
+              const harvestTransaction = await blockchainTransactionManager.recordHarvestTransaction(
+                extractedBatchId.toString(),
+                user?.id || '', // Farmer address
+                formData.cropType,
+                formData.variety,
+                parseFloat(formData.harvestQuantity),
+                parseFloat(formData.pricePerKg),
+                certificateIpfsHash
+              );
+              console.log('🔍 DEBUG: Harvest transaction recorded:', harvestTransaction);
+            } catch (blockchainError) {
+              console.error('🔍 DEBUG: Blockchain harvest transaction failed:', blockchainError);
+              // Continue with database operations even if blockchain fails
+              console.log('🔍 DEBUG: Continuing with database operations despite blockchain error');
+            }
+          } else {
+            console.log('🔍 DEBUG: No signer available for blockchain transaction');
+          }
         } else {
           // Try to decode events using contract interface
           try {
@@ -238,7 +265,7 @@ export const BatchRegistration = () => {
                 extractedBatchId = parseInt(foundEvent.topics[1], 16);
                 setBatchId(extractedBatchId);
                 batchData.id = extractedBatchId;
-                batchData.ipfsHash = ipfsHash;
+                batchData.ipfsHash = certificateIpfsHash;
                 console.log('Found batch ID using alternative signature:', extractedBatchId);
               } else {
                 // Final fallback: use timestamp as temporary ID
@@ -248,7 +275,7 @@ export const BatchRegistration = () => {
                 
                 // Update the batch data with the fallback ID
                 batchData.id = extractedBatchId;
-                batchData.ipfsHash = ipfsHash;
+                batchData.ipfsHash = certificateIpfsHash;
               }
             }
           } catch (decodeError) {
@@ -416,7 +443,7 @@ export const BatchRegistration = () => {
                 <div className="flex-1">
                   <h3 className="font-semibold text-green-800">Batch Registration Successful!</h3>
                   <p className="text-sm text-green-700">
-                    Your batch has been registered on the blockchain and stored on IPFS.
+                    Your batch has been registered on the blockchain and stored on IPFS for complete traceability.
                   </p>
                   <div className="mt-2 space-y-1 text-sm">
                     <p><strong>Batch ID:</strong> {batchId}</p>

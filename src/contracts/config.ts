@@ -1,5 +1,5 @@
 // Contract configuration
-export const CONTRACT_ADDRESS = "0xd9145CCE52D386f254917e481eB44e9943F39138";
+export const CONTRACT_ADDRESS = "0xf8e81D47203A594245E36C48e151709F0C19fBe8";
 
 // Network configuration
 export const NETWORK_CONFIG = {

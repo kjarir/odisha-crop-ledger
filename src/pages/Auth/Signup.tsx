@@ -46,8 +46,8 @@ export const Signup = () => {
           emailRedirectTo: `${window.location.origin}/`,
           data: {
             full_name: fullName,
-            role: selectedRole,
-            farm_location: selectedRole === 'farmer' ? farmLocation : null,
+            user_type: selectedRole,
+            farm_location: farmLocation,
           }
         }
       });
@@ -85,18 +85,25 @@ export const Signup = () => {
       color: 'text-primary'
     },
     {
-      id: 'retailer',
-      label: 'Retailer',
-      description: 'Purchase and sell agricultural products',
+      id: 'distributor',
+      label: 'Distributor',
+      description: 'Buy from farmers and sell to retailers',
       icon: Store,
       color: 'text-secondary'
+    },
+    {
+      id: 'retailer',
+      label: 'Retailer',
+      description: 'Buy from distributors and sell to consumers',
+      icon: Store,
+      color: 'text-accent'
     },
     {
       id: 'helper',
       label: 'Helper/Worker',
       description: 'Assist in farm operations and logistics',
       icon: Users,
-      color: 'text-accent'
+      color: 'text-muted-foreground'
     }
   ];
 
@@ -193,7 +200,7 @@ export const Signup = () => {
                 </div>
               </div>
 
-              {selectedRole === 'farmer' && (
+              {(selectedRole === 'farmer' || selectedRole === 'distributor' || selectedRole === 'retailer') && (
                 <div className="space-y-2">
                   <Label htmlFor="farmLocation" className="text-sm">Location</Label>
                   <Input

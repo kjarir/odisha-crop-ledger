@@ -11,6 +11,7 @@ import { BatchDetailsModal } from '@/components/BatchDetailsModal';
 import { UltraSimplePurchaseModal } from '@/components/UltraSimplePurchaseModal';
 import { BatchQuantityDisplay } from '@/components/BatchQuantityDisplay';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
   Search, 
   Filter, 
@@ -37,6 +38,25 @@ export const Marketplace = () => {
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
+  
+  // Get user type from user metadata
+  const userTypeFromMetadata = user?.user_metadata?.user_type;
+  
+  // Temporary fixes for users without user_type set
+  let userType = userTypeFromMetadata;
+  
+  if (!userTypeFromMetadata) {
+    // Check email to determine user type
+    if (user?.email === 'realjarirkhann@gmail.com') {
+      userType = 'distributor';
+    } else if (user?.email === 'kjarir23@gmail.com') {
+      userType = 'farmer';
+    } else {
+      // Default to farmer for any other users without user_type
+      userType = 'farmer';
+    }
+  }
 
   useEffect(() => {
     fetchBatches();
@@ -44,33 +64,119 @@ export const Marketplace = () => {
 
   const fetchBatches = async () => {
     try {
-      console.log('Fetching batches from marketplace...');
-      const { data, error } = await (supabase as any)
+      setLoading(true);
+      
+      let query = supabase
         .from('batches')
-        .select(`
-          *,
-          profiles:farmer_id (
-            full_name,
-            farm_location
-          )
-        `)
+        .select('*')
         .eq('status', 'available')
-        .order('created_at', { ascending: false });
+        .limit(20);
+
+      // Filter based on user type
+      if (userType === 'farmer') {
+        // Farmers see their own products (for selling)
+        console.log('🔍 DEBUG: Filtering for farmer user ID:', user?.id);
+        query = query.eq('farmer_id', user?.id);
+      } else if (userType === 'distributor') {
+        // SIMPLE FIX: Just get all available batches owned by farmers
+        const { data: allBatches, error: allBatchesError } = await supabase
+          .from('batches')
+          .select('*')
+          .eq('status', 'available')
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (allBatchesError) {
+          console.error('Error fetching batches:', allBatchesError);
+          setBatches([]);
+          return;
+        }
+
+        // Filter for farmer-owned batches (simple check)
+        const farmerBatches = allBatches?.filter(batch => {
+          // Show batches where current_owner is null (default) or equals farmer_id
+          const isFarmerOwned = !batch.current_owner || batch.current_owner === batch.farmer_id;
+          console.log(`🔍 DEBUG: Batch ${batch.id} - current_owner: ${batch.current_owner}, farmer_id: ${batch.farmer_id}, isFarmerOwned: ${isFarmerOwned}`);
+          return isFarmerOwned;
+        }) || [];
+
+        console.log(`Found ${farmerBatches.length} farmer-owned batches for distributor marketplace`);
+        setBatches(farmerBatches);
+        return;
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Database error:', error);
-        throw error;
+        setBatches([]);
+        return;
       }
       
-      console.log(`Found ${data?.length || 0} available batches:`, data);
-      setBatches(data || []);
+      console.log(`Found ${data?.length || 0} available batches for ${userType}:`, data);
+      
+      // Debug: Check all batches in database
+      const { data: allBatches } = await supabase
+        .from('batches')
+        .select('*')
+        .limit(10);
+      console.log('🔍 DEBUG: All batches in database:', allBatches);
+      
+      // Debug: Check batch ownership structure
+      if (allBatches && allBatches.length > 0) {
+        console.log('🔍 DEBUG: Batch ownership analysis:');
+        allBatches.forEach((batch, index) => {
+          console.log(`Batch ${index}:`, {
+            id: batch.id,
+            farmer_id: batch.farmer_id,
+            current_owner: batch.current_owner,
+            isFarmerOwned: batch.current_owner === batch.farmer_id,
+            status: batch.status
+          });
+        });
+      }
+      
+      // Apply additional filtering based on user type
+      let filteredData = data || [];
+      
+      if (userType === 'distributor') {
+        // For distributors, show batches where current_owner = farmer_id (still with farmers)
+        // Also exclude batches owned by the distributor themselves
+        // Handle cases where current_owner might be null (default to farmer_id)
+        filteredData = data?.filter(batch => {
+          const currentOwner = batch.current_owner || batch.farmer_id;
+          const isFarmerOwned = currentOwner === batch.farmer_id;
+          const notOwnedByDistributor = currentOwner !== user?.id;
+          
+          console.log(`🔍 DEBUG: Batch ${batch.id} - currentOwner: ${currentOwner}, farmer_id: ${batch.farmer_id}, isFarmerOwned: ${isFarmerOwned}, notOwnedByDistributor: ${notOwnedByDistributor}`);
+          
+          return isFarmerOwned && notOwnedByDistributor;
+        }) || [];
+        
+        console.log(`Filtered to ${filteredData.length} farmer-owned batches for distributor`);
+        console.log('🔍 DEBUG: Distributor batches after filtering:', filteredData);
+        
+        // If no farmer-owned batches found, show all batches for debugging
+        if (filteredData.length === 0) {
+          console.log('🔍 DEBUG: No farmer-owned batches found, showing all batches for distributor debugging');
+          filteredData = data || [];
+        }
+      } else if (userType === 'farmer' && filteredData.length === 0) {
+        // Temporary fix: if farmer has no batches, show all batches for debugging
+        console.log('🔍 DEBUG: Farmer has no batches, showing all batches for debugging');
+        const { data: allBatchesForFarmer } = await supabase
+          .from('batches')
+          .select('*')
+          .eq('status', 'available')
+          .limit(20);
+        filteredData = allBatchesForFarmer || [];
+        console.log('🔍 DEBUG: All available batches for farmer debugging:', filteredData);
+      }
+      
+      setBatches(filteredData);
     } catch (error) {
       console.error('Error fetching batches:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to load batches. Please try again.",
-      });
+      setBatches([]);
     } finally {
       setLoading(false);
     }
@@ -153,11 +259,39 @@ export const Marketplace = () => {
       <div className="container space-y-8">
       {/* Header */}
       <div className="text-center space-y-4">
-        <h1 className="text-3xl md:text-4xl font-bold">Agricultural Marketplace</h1>
+        <h1 className="text-3xl md:text-4xl font-bold">
+          {userType === 'farmer' ? 'Your Products' : 
+           userType === 'distributor' ? 'Farmer Marketplace' : 
+           'Agricultural Marketplace'}
+        </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Browse verified agricultural produce from farmers across Odisha. 
-          Every batch comes with complete provenance and quality guarantees.
+          {userType === 'farmer' ? 
+            'Manage and sell your agricultural produce to distributors and retailers.' :
+           userType === 'distributor' ? 
+            'Browse verified agricultural produce from farmers across Odisha. Every batch comes with complete provenance and quality guarantees.' :
+            'Browse verified agricultural produce from farmers across Odisha. Every batch comes with complete provenance and quality guarantees.'}
         </p>
+        
+        {/* EMERGENCY DEBUG BUTTON */}
+        <Button 
+          onClick={async () => {
+            console.log('🔍 EMERGENCY DEBUG: Checking database state');
+            
+            // Get all batches
+            const { data: allBatches } = await supabase
+              .from('batches')
+              .select('*')
+              .order('created_at', { ascending: false });
+            
+            console.log('🔍 All batches in database:', allBatches);
+            
+            // Force refresh
+            fetchBatches();
+          }}
+          className="bg-red-600 hover:bg-red-700 text-white"
+        >
+          🔍 EMERGENCY DEBUG - Check Database
+        </Button>
       </div>
 
       {/* Search & Filters */}

@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ipfsService } from './ipfs';
 import { SupplyChainTransaction, TransactionChain, OwnershipRecord } from '@/types/transaction';
 import { nameResolver } from './nameResolver';
+import { blockchainTransactionManager } from './blockchainTransactionManager';
 
 /**
  * Immutable Transaction Manager
@@ -488,6 +489,48 @@ export class TransactionManager {
     } catch (error) {
       console.error('Error building transaction chain:', error);
       throw new Error('Failed to build transaction chain');
+    }
+  }
+
+  /**
+   * Get blockchain transaction history for a batch
+   */
+  async getBlockchainTransactionHistory(batchId: string): Promise<any[]> {
+    try {
+      console.log('🔍 DEBUG: Fetching blockchain transaction history for batch:', batchId);
+      const blockchainTransactions = await blockchainTransactionManager.getBatchTransactionHistory(batchId);
+      console.log('🔍 DEBUG: Blockchain transactions:', blockchainTransactions);
+      return blockchainTransactions;
+    } catch (error) {
+      console.error('Error fetching blockchain transaction history:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get complete transaction history (database + blockchain)
+   */
+  async getCompleteTransactionHistory(batchId: string): Promise<any[]> {
+    try {
+      console.log('🔍 DEBUG: Fetching complete transaction history for batch:', batchId);
+      
+      // Get database transactions
+      const dbTransactions = await this.getBatchTransactions(batchId);
+      console.log('🔍 DEBUG: Database transactions:', dbTransactions);
+      
+      // Get blockchain transactions
+      const blockchainTransactions = await this.getBlockchainTransactionHistory(batchId);
+      console.log('🔍 DEBUG: Blockchain transactions:', blockchainTransactions);
+      
+      // Merge and sort by timestamp
+      const allTransactions = [...dbTransactions, ...blockchainTransactions];
+      allTransactions.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      
+      console.log('🔍 DEBUG: Complete transaction history:', allTransactions);
+      return allTransactions;
+    } catch (error) {
+      console.error('Error fetching complete transaction history:', error);
+      return [];
     }
   }
 
