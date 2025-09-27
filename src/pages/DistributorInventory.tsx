@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Package, MapPin, Calendar, DollarSign, Eye, Edit, Plus, Save, X, User, History, FileText, Download } from 'lucide-react';
-import { db } from '@/utils/supabaseFix';
+import { db } from '@/utils/typeSafeSupabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { transactionManager } from '@/utils/transactionManager';
@@ -71,7 +71,7 @@ export const DistributorInventory = () => {
       console.log('🔍 DEBUG: Inventory query result:', { data, error });
       
       // Debug: Check all batches to see what's in the database
-      const { data: allBatches } = await supabase
+      const { data: allBatches } = await db
         .from('batches')
         .select('*')
         .limit(10);
@@ -88,7 +88,7 @@ export const DistributorInventory = () => {
         console.log('🔍 DEBUG: Batches owned by current user:', userOwnedBatches);
         
         // Check the exact query that should return results
-        const { data: directQuery } = await supabase
+        const { data: directQuery } = await db
           .from('batches')
           .select('*')
           .eq('current_owner', user?.id)
@@ -96,7 +96,7 @@ export const DistributorInventory = () => {
         console.log('🔍 DEBUG: Direct query for user-owned batches:', directQuery);
         
         // Check if the issue is with the status field
-        const { data: statusQuery } = await supabase
+        const { data: statusQuery } = await db
           .from('batches')
           .select('*')
           .eq('current_owner', user?.id);
@@ -196,7 +196,7 @@ export const DistributorInventory = () => {
       setRegisteredBatches(prev => new Set(prev).add(item.id));
       
       // Use the RPC function to register batch to retailer marketplace
-      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+      const { data: rpcResult, error: rpcError } = await db.rpc(
         'register_batch_to_retailer_marketplace',
         { batch_id_param: item.id }
       );
@@ -240,7 +240,7 @@ export const DistributorInventory = () => {
         return;
       }
 
-      const { error } = await supabase
+      const { error } = await db
         .from('batches')
         .update({ price_per_kg: newPrice })
         .eq('id', selectedItem.id);
@@ -326,7 +326,7 @@ export const DistributorInventory = () => {
               console.log('🔍 DEBUG: Checking distributor inventory state');
               
               // Get all batches
-              const { data: allBatches } = await supabase
+              const { data: allBatches } = await db
                 .from('batches')
                 .select('*')
                 .order('created_at', { ascending: false });
@@ -367,8 +367,8 @@ export const DistributorInventory = () => {
                        console.log('🔍 DEBUG: Starting manual fix for user:', user?.id);
                        
                        // Get all transactions where this user was the buyer
-                       const { data: transactions, error: transError } = await supabase
-                         .from('transactions')
+                        const { data: transactions, error: transError } = await db
+                          .from('transactions')
                          .select('batch_id, buyer_id, seller_id, quantity, price, created_at')
                          .eq('buyer_id', user?.id)
                          .eq('transaction_type', 'PURCHASE');
@@ -385,8 +385,8 @@ export const DistributorInventory = () => {
                          console.log('🔍 DEBUG: Updating batches:', batchIds);
                          
                          // First, check which batches actually exist
-                         const { data: existingBatches } = await supabase
-                           .from('batches')
+                          const { data: existingBatches } = await db
+                            .from('batches')
                            .select('id')
                            .in('id', batchIds);
                          
@@ -395,8 +395,8 @@ export const DistributorInventory = () => {
                          
                          if (existingBatchIds.length > 0) {
                            // First, let's see what the current batch looks like
-                           const { data: currentBatch } = await supabase
-                             .from('batches')
+                            const { data: currentBatch } = await db
+                              .from('batches')
                              .select('*')
                              .eq('id', existingBatchIds[0])
                              .single();
@@ -404,8 +404,8 @@ export const DistributorInventory = () => {
                            console.log('🔍 DEBUG: Current batch before update:', currentBatch);
                            
                            // Update existing batches - fix the null current_owner issue
-                           const { data: updateResult, error: updateError } = await supabase
-                             .from('batches')
+                            const { data: updateResult, error: updateError } = await db
+                              .from('batches')
                              .update({ 
                                current_owner: user?.id,
                                status: 'available'
@@ -422,8 +422,8 @@ export const DistributorInventory = () => {
                              console.log('Manual fix successful - updated batches:', updateResult);
                              
                              // Verify the update worked
-                             const { data: verifyBatch } = await supabase
-                               .from('batches')
+                              const { data: verifyBatch } = await db
+                                .from('batches')
                                .select('*')
                                .eq('id', existingBatchIds[0])
                                .single();
@@ -435,8 +435,8 @@ export const DistributorInventory = () => {
                            
                            // Create a dummy batch for the first transaction
                            const firstTransaction = transactions[0];
-                           const { data: newBatch, error: createError } = await supabase
-                             .from('batches')
+                            const { data: newBatch, error: createError } = await db
+                              .from('batches')
                              .insert({
                                id: firstTransaction.batch_id,
                                current_owner: user?.id,
@@ -475,29 +475,29 @@ export const DistributorInventory = () => {
                          console.log('🔍 DEBUG: Direct database inspection');
                          
                          // Check all transactions
-                         const { data: allTransactions } = await supabase
-                           .from('transactions')
+                          const { data: allTransactions } = await db
+                            .from('transactions')
                            .select('*')
                            .limit(20);
                          console.log('🔍 DEBUG: ALL TRANSACTIONS:', allTransactions);
                          
                          // Check all batches
-                         const { data: allBatches } = await supabase
-                           .from('batches')
+                          const { data: allBatches } = await db
+                            .from('batches')
                            .select('*')
                            .limit(20);
                          console.log('🔍 DEBUG: ALL BATCHES:', allBatches);
                          
                          // Check your specific transactions
-                         const { data: myTransactions } = await supabase
-                           .from('transactions')
+                          const { data: myTransactions } = await db
+                            .from('transactions')
                            .select('*')
                            .eq('buyer_id', user?.id);
                          console.log('🔍 DEBUG: MY TRANSACTIONS:', myTransactions);
                          
                          // Check batches owned by you
-                         const { data: myBatches } = await supabase
-                           .from('batches')
+                          const { data: myBatches } = await db
+                            .from('batches')
                            .select('*')
                            .eq('current_owner', user?.id);
                          console.log('🔍 DEBUG: MY BATCHES (current_owner):', myBatches);
@@ -537,8 +537,8 @@ export const DistributorInventory = () => {
                          // Try multiple update methods
                          
                          // Method 1: Direct update by ID
-                         const { data: update1, error: error1 } = await supabase
-                           .from('batches')
+                          const { data: update1, error: error1 } = await db
+                            .from('batches')
                            .update({ 
                              current_owner: user?.id,
                              status: 'available',
@@ -550,8 +550,8 @@ export const DistributorInventory = () => {
                          console.log('🔍 DEBUG: Method 1 (by ID) - result:', update1, 'error:', error1);
                          
                          // Method 2: Update by null current_owner
-                         const { data: update2, error: error2 } = await supabase
-                           .from('batches')
+                          const { data: update2, error: error2 } = await db
+                            .from('batches')
                            .update({ 
                              current_owner: user?.id,
                              status: 'available',
@@ -564,7 +564,7 @@ export const DistributorInventory = () => {
                          
                          // Method 3: Use RPC function if available
                          try {
-                           const { data: rpcResult, error: rpcError } = await supabase.rpc('update_batch_owner', {
+                           const { data: rpcResult, error: rpcError } = await db.rpc('update_batch_owner', {
                              batch_id: batchId,
                              new_owner: user?.id
                            });
@@ -574,8 +574,8 @@ export const DistributorInventory = () => {
                          }
                          
                          // Verify the update worked
-                         const { data: verifyBatch } = await supabase
-                           .from('batches')
+                          const { data: verifyBatch } = await db
+                            .from('batches')
                            .select('*')
                            .eq('id', batchId)
                            .single();
@@ -601,8 +601,8 @@ export const DistributorInventory = () => {
                          console.log('🔍 DEBUG: SHOWING EXACT BATCH DATA');
                          
                          // Get the specific batch that was mentioned in logs
-                         const { data: specificBatch } = await supabase
-                           .from('batches')
+                          const { data: specificBatch } = await db
+                            .from('batches')
                            .select('*')
                            .eq('id', '0d02e2d6-27d9-4521-805e-15f81e67e74c')
                            .single();

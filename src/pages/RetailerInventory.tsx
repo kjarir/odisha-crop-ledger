@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/utils/typeSafeSupabase';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,8 +45,8 @@ export const RetailerInventory = () => {
       console.log('🔍 DEBUG: Fetching retailer inventory for user:', user?.id);
       
       // Get batches owned by this retailer
-      const { data, error } = await supabase
-        .from('batches')
+    const { data, error } = await db
+      .from('batches')
         .select(`
           *,
           farmer_profile:profiles!batches_farmer_id_fkey (
