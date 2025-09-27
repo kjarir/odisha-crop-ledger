@@ -1,262 +1,216 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { MarketplaceManager } from '@/utils/marketplaceManager';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Package, 
-  TrendingUp, 
-  Users, 
-  Store,
-  Award,
-  Eye,
-  ShoppingCart,
-  ArrowUpRight
-} from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
-export const RetailerDashboard = () => {
-  const { user, profile } = useAuth();
-  const [stats, setStats] = useState({
-    totalPurchases: 0,
-    totalRevenue: 0,
-    activeInventory: 0,
-    customerSatisfaction: 0
-  });
-  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+interface Batch {
+  id: string;
+  crop_type: string;
+  variety: string;
+  harvest_quantity: number;
+  price_per_kg: number;
+  total_price: number;
+  harvest_date: string;
+  quality_score: number;
+  marketplace_status: string;
+  current_owner?: string;
+}
+
+interface MarketplaceBatch {
+  batch_id: string;
+  batches: Batch & {
+    profiles: {
+      full_name: string;
+      farm_location: string;
+    };
+  };
+}
+
+export default function RetailerDashboard() {
+  const { user } = useAuth();
+  const [profile, setProfile] = useState<any>(null);
+  const [inventory, setInventory] = useState<Batch[]>([]);
+  const [marketplaceBatches, setMarketplaceBatches] = useState<MarketplaceBatch[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (user) {
-      fetchDashboardData();
+      fetchProfile();
     }
   }, [user]);
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      
-      // Get retailer's purchases from transactions table (simplified query)
-      const { data: purchases } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('buyer_id', user?.id)
-        .eq('transaction_type', 'PURCHASE')
-        .order('created_at', { ascending: false });
+  useEffect(() => {
+    if (profile?.id) {
+      fetchData();
+    }
+  }, [profile]);
 
-      // Get batch details separately for each purchase
-      let purchasesWithDetails = [];
-      if (purchases && purchases.length > 0) {
-        const batchIds = purchases.map(p => p.batch_id);
-        const { data: batches } = await supabase
-          .from('batches')
-          .select('*')
-          .in('id', batchIds);
-        
-        // Merge transaction and batch data
-        purchasesWithDetails = purchases.map(purchase => {
-          const batch = batches?.find(b => b.id === purchase.batch_id);
-          return {
-            ...purchase,
-            batch: batch
-          };
-        });
+  const fetchProfile = async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (error) throw error;
+      setProfile(data);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    }
+  };
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch retailer inventory
+      if (profile?.id) {
+        const inventoryResult = await MarketplaceManager.getRetailerInventory(profile.id);
+        if (inventoryResult.success) {
+          setInventory(inventoryResult.data);
+        }
       }
 
-      // Get retailer's inventory (batches they own)
-      const { data: inventory } = await supabase
-        .from('batches')
-        .select('*')
-        .eq('current_owner', user?.id)
-        .eq('status', 'available');
-
-      setStats({
-        totalPurchases: purchasesWithDetails?.length || 0,
-        totalRevenue: purchasesWithDetails?.reduce((sum, transaction) => sum + transaction.price, 0) || 0,
-        activeInventory: inventory?.length || 0,
-        customerSatisfaction: 95 // Mock data for now
-      });
-
-      setRecentTransactions(purchasesWithDetails?.slice(0, 5) || []);
+      // Fetch distributor marketplace batches
+      const marketplaceResult = await MarketplaceManager.getDistributorMarketplaceBatches();
+      if (marketplaceResult.success) {
+        setMarketplaceBatches(marketplaceResult.data);
+      }
     } catch (error) {
-      console.error('Error fetching retailer dashboard data:', error);
+      console.error('Error fetching data:', error);
+      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
+  const handlePurchaseFromDistributor = async (batch: Batch) => {
+    if (!profile?.id) {
+      toast.error('Profile not found');
+      return;
+    }
+
+    try {
+      // Purchase batch
+      const purchaseResult = await MarketplaceManager.purchaseFromDistributorMarketplace(
+        batch.id,
+        profile.id
+      );
+
+      if (!purchaseResult.success) {
+        throw purchaseResult.error;
+      }
+
+      // Create transaction record
+      await MarketplaceManager.createTransaction(
+        batch.id,
+        batch.current_owner || '',
+        profile.id,
+        'distributor_to_retailer',
+        batch.harvest_quantity,
+        batch.total_price
+      );
+
+      toast.success('Batch purchased successfully!');
+      fetchData(); // Refresh data
+    } catch (error) {
+      console.error('Error purchasing batch:', error);
+      toast.error('Failed to purchase batch');
+    }
+  };
+
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>Loading dashboard...</p>
-        </div>
-      </div>
-    );
+    return <div className="p-6 bg-white">Loading...</div>;
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Welcome back, {profile?.full_name || 'Retailer'}!
-        </h1>
-        <p className="text-gray-600">Manage your retail business and serve your customers with fresh produce.</p>
+    <div className="container mx-auto p-6 space-y-6 bg-white">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-gray-900">Retailer Dashboard</h1>
+        <Badge variant="secondary">
+          {profile?.full_name || 'Retailer'}
+        </Badge>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Purchases</CardTitle>
-            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalPurchases}</div>
-            <p className="text-xs text-muted-foreground">Batches purchased</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Inventory Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{stats.totalRevenue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Current inventory</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Inventory</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.activeInventory}</div>
-            <p className="text-xs text-muted-foreground">Available batches</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Customer Satisfaction</CardTitle>
-            <Award className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.customerSatisfaction}%</div>
-            <p className="text-xs text-muted-foreground">Quality rating</p>
-          </CardContent>
-        </Card>
+      {/* Inventory Section */}
+      <div className="space-y-4">
+        <h2 className="text-2xl font-semibold text-gray-800">My Inventory</h2>
+        {inventory.length === 0 ? (
+          <Card>
+            <CardContent className="p-6">
+              <p className="text-gray-500">No batches in inventory</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {inventory.map((batch) => (
+              <Card key={batch.id}>
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    {batch.crop_type} - {batch.variety}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p><strong>Quantity:</strong> {batch.harvest_quantity}kg</p>
+                  <p><strong>Price:</strong> ₹{batch.price_per_kg}/kg</p>
+                  <p><strong>Total:</strong> ₹{batch.total_price}</p>
+                  <p><strong>Quality Score:</strong> {batch.quality_score || 'N/A'}</p>
+                  <Badge variant="outline" className="mt-2">
+                    Ready for Sale
+                  </Badge>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Store className="h-5 w-5" />
-              Buy from Distributors
-            </CardTitle>
-            <CardDescription>
-              Purchase quality produce from trusted distributors
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild className="w-full">
-              <Link to="/retailer-marketplace">
-                <ShoppingCart className="h-4 w-4 mr-2" />
-                Browse Distributor Marketplace
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Manage Inventory
-            </CardTitle>
-            <CardDescription>
-              Track and manage your retail inventory
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild className="w-full">
-              <Link to="/retailer-inventory">
-                <ArrowUpRight className="h-4 w-4 mr-2" />
-                View Inventory
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Track Supply Chain
-            </CardTitle>
-            <CardDescription>
-              Monitor your products from farm to store
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline" className="w-full">
-              <Link to="/track">
-                <Eye className="h-4 w-4 mr-2" />
-                Track Products
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+      {/* Distributor Marketplace Section */}
+      <div className="space-y-4">
+        <h2 className="text-2xl font-semibold text-gray-800">Available from Distributors</h2>
+        {marketplaceBatches.length === 0 ? (
+          <Card>
+            <CardContent className="p-6">
+              <p className="text-gray-500">No batches available from distributors</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {marketplaceBatches.map((item) => {
+              const batch = item.batches;
+              return (
+                <Card key={batch.id}>
+                  <CardHeader>
+                    <CardTitle className="text-lg">
+                      {batch.crop_type} - {batch.variety}
+                    </CardTitle>
+                    <p className="text-sm text-gray-600">
+                      From: {batch.profiles?.full_name || 'Unknown Distributor'}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <p><strong>Quantity:</strong> {batch.harvest_quantity}kg</p>
+                    <p><strong>Price:</strong> ₹{batch.price_per_kg}/kg</p>
+                    <p><strong>Total:</strong> ₹{batch.total_price}</p>
+                    <p><strong>Harvest Date:</strong> {new Date(batch.harvest_date).toLocaleDateString()}</p>
+                    <p><strong>Quality Score:</strong> {batch.quality_score || 'N/A'}</p>
+                    <Button 
+                      onClick={() => handlePurchaseFromDistributor(batch)}
+                      className="w-full mt-4"
+                    >
+                      Purchase from Distributor
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
-
-      {/* Recent Transactions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Purchases</CardTitle>
-          <CardDescription>Your latest purchases from distributors</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {recentTransactions.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-              <p>No purchases yet</p>
-              <p className="text-sm">Start by purchasing from distributors</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {recentTransactions.map((transaction) => (
-                <div key={transaction.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <Package className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium">{transaction.batch?.crop_type || 'Unknown Crop'} - {transaction.batch?.variety || 'Unknown Variety'}</h4>
-                      <p className="text-sm text-gray-500">
-                        From: {transaction.batch?.current_owner || 'Unknown Distributor'} • {transaction.quantity} kg
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">₹{transaction.price}</p>
-                    <Badge variant="default">
-                      {transaction.transaction_type}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
-};
+}

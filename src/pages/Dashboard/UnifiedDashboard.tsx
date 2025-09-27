@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { FarmerDashboard } from './FarmerDashboard';
-import { DistributorDashboard } from './DistributorDashboard';
-import { RetailerDashboard } from './RetailerDashboard';
+import DistributorDashboard from './DistributorDashboard';
+import RetailerDashboard from './RetailerDashboard';
 import { Loader2 } from 'lucide-react';
 
 export const UnifiedDashboard = () => {

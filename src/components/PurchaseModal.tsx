@@ -110,8 +110,6 @@ export const PurchaseModal: React.FC<PurchaseModalProps> = ({
         
         if (profile?.full_name) {
           buyerName = profile.full_name;
-        } else if (user?.name) {
-          buyerName = user.name;
         } else if (user?.email) {
           // Extract name from email as fallback
           const emailName = user.email.split('@')[0];
@@ -119,9 +117,7 @@ export const PurchaseModal: React.FC<PurchaseModalProps> = ({
         }
       } catch (error) {
         console.warn('Could not fetch buyer name from profile:', error);
-        if (user?.name) {
-          buyerName = user.name;
-        } else if (user?.email) {
+        if (user?.email) {
           const emailName = user.email.split('@')[0];
           buyerName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
         }

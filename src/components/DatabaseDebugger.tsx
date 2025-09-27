@@ -14,7 +14,7 @@ export const DatabaseDebugger = () => {
     setLoading(true);
     try {
       // Fetch all transactions
-      const { data: transactionsData, error: transactionsError } = await supabase
+      const { data: transactionsData, error: transactionsError } = await (supabase as any)
         .from('transactions')
         .select('*')
         .order('created_at', { ascending: false });
@@ -23,7 +23,7 @@ export const DatabaseDebugger = () => {
       setTransactions(transactionsData || []);
 
       // Fetch all batches
-      const { data: batchesData, error: batchesError } = await supabase
+      const { data: batchesData, error: batchesError } = await (supabase as any)
         .from('batches')
         .select('*')
         .order('created_at', { ascending: false });

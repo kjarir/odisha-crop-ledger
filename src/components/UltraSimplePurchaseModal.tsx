@@ -81,8 +81,6 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
         
         if (profile?.full_name) {
           buyerName = profile.full_name;
-        } else if (user?.name) {
-          buyerName = user.name;
         } else if (user?.email) {
           // Extract name from email as fallback
           const emailName = user.email.split('@')[0];
@@ -90,9 +88,7 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
         }
       } catch (error) {
         console.warn('Could not fetch buyer name from profile:', error);
-        if (user?.name) {
-          buyerName = user.name;
-        } else if (user?.email) {
+        if (user?.email) {
           const emailName = user.email.split('@')[0];
           buyerName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
         }
@@ -150,7 +146,7 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
 
       console.log('🔍 DEBUG: Creating transaction with data:', transactionData);
       
-      const { data: transactionResult, error: transactionError } = await supabase
+      const { data: transactionResult, error: transactionError } = await (supabase as any)
         .from('transactions')
         .insert(transactionData)
         .select();
@@ -174,7 +170,7 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
       console.log('🔍 DEBUG: Full batch object:', batch);
 
       // First, check if the batch exists
-      const { data: existingBatch, error: checkError } = await supabase
+      const { data: existingBatch, error: checkError } = await (supabase as any)
         .from('batches')
         .select('*')
         .eq('id', batch.id)
@@ -187,7 +183,7 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
         throw new Error(`Batch not found: ${checkError.message}`);
       }
 
-      const { data: batchResult, error: batchError } = await supabase
+      const { data: batchResult, error: batchError } = await (supabase as any)
         .from('batches')
         .update(batchUpdateData)
         .eq('id', batch.id)
@@ -206,7 +202,7 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
 
       // Remove batch from farmer-distributor marketplace after purchase
       try {
-        const { error: removeError } = await supabase.rpc(
+        const { error: removeError } = await (supabase as any).rpc(
           'remove_batch_from_marketplace',
           { 
             batch_id_param: batch.id,
