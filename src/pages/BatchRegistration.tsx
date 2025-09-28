@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useNavigate } from 'react-router-dom';
+import { MarketPriceDisplay } from '@/components/MarketPriceDisplay';
 
 export const BatchRegistration = () => {
   const { user } = useAuth();
@@ -51,6 +52,12 @@ export const BatchRegistration = () => {
   const [batchId, setBatchId] = useState<number | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const handlePriceSelect = (price: number) => {
+    // Convert price from per quintal to per kg (divide by 100)
+    const pricePerKg = price / 100;
+    setFormData({...formData, pricePerKg: pricePerKg.toString()});
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -615,8 +622,24 @@ export const BatchRegistration = () => {
                     onChange={(e) => setFormData({...formData, pricePerKg: e.target.value})}
                     required
                   />
+                  <p className="text-xs text-gray-600">
+                    💡 Current market prices will be shown below to help you set a competitive price
+                  </p>
                 </div>
               </div>
+
+              {/* Market Price Display */}
+              {formData.cropType && (
+                <div className="mt-6">
+                  <MarketPriceDisplay
+                    cropType={formData.cropType}
+                    variety={formData.variety}
+                    state="Odisha" // You can make this dynamic based on user location
+                    onPriceSelect={handlePriceSelect}
+                    className="w-full"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
