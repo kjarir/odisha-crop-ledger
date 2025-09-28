@@ -55,8 +55,6 @@ export const UnifiedVerificationSystem: React.FC = () => {
   const [batchData, setBatchData] = useState<BatchData | null>(null);
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [recentBatches, setRecentBatches] = useState<any[]>([]);
-  const [showBatchList, setShowBatchList] = useState(false);
   const { toast } = useToast();
 
 
@@ -73,31 +71,6 @@ export const UnifiedVerificationSystem: React.FC = () => {
     }
   }, [searchParams]);
 
-  // Load recent batches for reference
-  useEffect(() => {
-    loadRecentBatches();
-  }, []);
-
-  const loadRecentBatches = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('batches')
-        .select('id, crop_type, variety, harvest_quantity, created_at')
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (error) {
-        console.error('Error loading recent batches:', error);
-        // Don't show error to user, just log it
-        return;
-      }
-
-      setRecentBatches(data || []);
-    } catch (error) {
-      console.error('Error loading recent batches:', error);
-      // Don't show error to user, just log it
-    }
-  };
 
   const handleVerify = async () => {
     if (!inputValue.trim()) {
@@ -362,46 +335,6 @@ export const UnifiedVerificationSystem: React.FC = () => {
             </div>
           </div>
           
-          {/* Recent Batches */}
-          {recentBatches.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Recent Batches (Click to verify)</Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowBatchList(!showBatchList)}
-                >
-                  {showBatchList ? 'Hide' : 'Show'} List
-                </Button>
-              </div>
-              
-              {showBatchList && (
-                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">
-                  {recentBatches.map((batch) => (
-                    <div
-                      key={batch.id}
-                      className="flex items-center justify-between p-2 border rounded cursor-pointer hover:bg-muted"
-                      onClick={() => {
-                        setInputValue(batch.id.toString());
-                        setShowBatchList(false);
-                      }}
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">Batch #{batch.id}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {batch.crop_type} - {batch.variety} | {batch.harvest_quantity}kg
-                        </div>
-                      </div>
-                      <Button size="sm" variant="ghost">
-                        Use
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
 

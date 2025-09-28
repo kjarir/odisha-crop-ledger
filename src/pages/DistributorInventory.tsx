@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
+import { BatchDetailsModal } from '@/components/BatchDetailsModal';
 import { 
   Package, 
   MapPin, 
@@ -20,6 +21,8 @@ export const DistributorInventory = () => {
   const { toast } = useToast();
   const [inventory, setInventory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedBatch, setSelectedBatch] = useState<any>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   useEffect(() => {
     fetchInventory();
@@ -83,12 +86,19 @@ export const DistributorInventory = () => {
             .eq('id', marketplaceData?.batch_id)
             .single();
 
-          // Get seller profile data
+          // Get seller profile data (the original farmer who sold to distributor)
           const { data: sellerProfile } = await supabase
             .from('profiles')
             .select('full_name, farm_location')
-            .eq('id', marketplaceData?.current_seller_id)
+            .eq('id', batchData?.farmer_id)
             .single();
+
+          console.log('🔍 DEBUG: Item data:', {
+            item,
+            marketplaceData,
+            batchData,
+            sellerProfile
+          });
 
           return {
             ...item,
@@ -107,6 +117,17 @@ export const DistributorInventory = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleViewDetails = (item: any) => {
+    // Convert inventory item to batch format for BatchDetailsModal
+    const batchData = {
+      ...item.batch,
+      profiles: item.seller,
+      marketplace: item.marketplace
+    };
+    setSelectedBatch(batchData);
+    setIsDetailsModalOpen(true);
   };
 
   const handleAddToMarketplace = async (inventoryItem: any) => {
@@ -190,7 +211,7 @@ export const DistributorInventory = () => {
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-secondary">
+              <div className="text-2xl font-bold text-seco">
                 {inventory.reduce((sum, item) => sum + item.quantity_purchased, 0)} kg
               </div>
               <div className="text-sm text-muted-foreground">Total Quantity</div>
@@ -198,7 +219,7 @@ export const DistributorInventory = () => {
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-accent">
+              <div className="text-2xl font-bold text-primary">
                 ₹{inventory.reduce((sum, item) => sum + item.purchase_price, 0).toLocaleString()}
               </div>
               <div className="text-sm text-muted-foreground">Total Investment</div>
@@ -234,15 +255,15 @@ export const DistributorInventory = () => {
                   <div className="space-y-2">
                     <div className="flex items-center text-sm">
                       <Package className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <span>From: {item.marketplace.profiles?.full_name || 'Unknown'}</span>
+                      <span>From: {item.seller?.full_name || 'Unknown'}</span>
                     </div>
                     <div className="flex items-center text-sm">
                       <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <span>{item.marketplace.profiles?.farm_location || 'Location not specified'}</span>
+                      <span>{item.seller?.farm_location || 'Location not specified'}</span>
                     </div>
                     <div className="flex items-center text-sm">
                       <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <span>Purchased: {new Date(item.purchase_date).toLocaleDateString()}</span>
+                      <span>Purchased: {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Invalid Date'}</span>
                     </div>
                   </div>
 
@@ -258,7 +279,7 @@ export const DistributorInventory = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Price per kg:</span>
-                      <span className="font-medium">₹{item.marketplace.price_per_kg}</span>
+                      <span className="font-medium">₹{item.purchase_price && item.quantity_purchased ? Math.round(item.purchase_price / item.quantity_purchased) : 'N/A'}</span>
                     </div>
                   </div>
 
@@ -274,10 +295,19 @@ export const DistributorInventory = () => {
                       variant="outline" 
                       size="sm" 
                       className="flex-1"
+                      onClick={() => handleViewDetails(item)}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View Details
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
                       onClick={() => handleAddToMarketplace(item)}
                     >
-                      <ShoppingCart className="h-4 w-4 mr-2" />
-                      Add to Marketplace
+                      <ShoppingCart className="h-4 w-4 mr-1" />
+                      Add to Market
                     </Button>
                   </div>
                 </CardContent>
@@ -286,6 +316,13 @@ export const DistributorInventory = () => {
           )}
         </div>
       </div>
+
+      {/* Batch Details Modal */}
+      <BatchDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={() => setIsDetailsModalOpen(false)}
+        batch={selectedBatch}
+      />
     </div>
   );
 };

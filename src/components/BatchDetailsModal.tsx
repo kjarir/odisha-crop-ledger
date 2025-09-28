@@ -12,8 +12,7 @@ import {
   Award, 
   DollarSign,
   CheckCircle,
-  ExternalLink,
-  X
+  ExternalLink
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SupplyChainTracker } from './SupplyChainTracker';
@@ -36,6 +35,12 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
   const batchData = batch.batches || batch;
   const marketplaceData = batch.batches ? batch : null;
 
+  // Debug logging
+  console.log('🔍 BatchDetailsModal - Full batch object:', batch);
+  console.log('🔍 BatchDetailsModal - batchData:', batchData);
+  console.log('🔍 BatchDetailsModal - group_id:', batchData.group_id);
+  console.log('🔍 BatchDetailsModal - All batchData keys:', Object.keys(batchData));
+
   const handleVerifyCertificate = () => {
     if (batchData.blockchain_id || batchData.blockchain_batch_id) {
       navigate(`/verify?batchId=${batchData.blockchain_id || batchData.blockchain_batch_id}`);
@@ -46,7 +51,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
   const handleViewCertificate = () => {
     const ipfsHash = batchData.ipfs_hash || batchData.ipfs_certificate_hash;
     if (ipfsHash) {
-      window.open(`https://gateway.pinata.cloud/ipfs/${ipfsHash}`, '_blank');
+      window.open(`https://tan-keen-fox-160.gateway.pinata.cloud/ipfs/${ipfsHash}`, '_blank');
     }
   };
 
@@ -73,20 +78,13 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-                <Package className="h-6 w-6 text-primary" />
-                {batchData.crop_type} - {batchData.variety}
-              </DialogTitle>
-              <DialogDescription className="text-lg">
-                Complete batch information and traceability details
-              </DialogDescription>
-            </div>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+          <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+            <Package className="h-6 w-6 text-primary" />
+            {batchData.crop_type} - {batchData.variety}
+          </DialogTitle>
+          <DialogDescription className="text-lg">
+            Complete batch information and traceability details
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -191,6 +189,63 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Verification Information - Always Show */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5" />
+                    Verification Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Group ID Section - Compact */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Group ID:</div>
+                      <code className="text-xs font-mono bg-gray-50 px-2 py-1 rounded">
+                        {batchData.group_id || 'Not available'}
+                      </code>
+                    </div>
+                    {batchData.group_id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(batchData.group_id);
+                        }}
+                        className="h-6 px-2 text-xs"
+                      >
+                        Copy
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Batch ID Section - Compact */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Batch ID:</div>
+                      <code className="text-xs font-mono bg-gray-50 px-2 py-1 rounded">
+                        {batchData.blockchain_id || batchData.blockchain_batch_id || batchData.id || 'Not available'}
+                      </code>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const batchId = batchData.blockchain_id || batchData.blockchain_batch_id || batchData.id;
+                        if (batchId) {
+                          navigator.clipboard.writeText(batchId);
+                        }
+                      }}
+                      className="h-6 px-2 text-xs"
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
             </div>
 
             {/* Right Column - Dates & Pricing */}
@@ -261,40 +316,6 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                 </CardContent>
               </Card>
 
-              {/* Blockchain & Verification */}
-              {(batchData.blockchain_id || batchData.blockchain_batch_id || batchData.ipfs_hash || batchData.ipfs_certificate_hash) && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <CheckCircle className="h-5 w-5" />
-                      Verification
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {(batchData.blockchain_id || batchData.blockchain_batch_id) && (
-                      <div className="flex items-center gap-3">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                        <div>
-                          <div className="font-medium">Blockchain ID</div>
-                          <div className="text-sm text-muted-foreground font-mono">
-                            {batchData.blockchain_id || batchData.blockchain_batch_id}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {(batchData.ipfs_hash || batchData.ipfs_certificate_hash) && (
-                      <div className="flex items-center gap-3">
-                        <ExternalLink className="h-4 w-4 text-blue-600" />
-                        <div>
-                          <div className="font-medium">Certificate Available</div>
-                          <div className="text-sm text-muted-foreground">IPFS Certificate</div>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
             </div>
           </div>
 
