@@ -5,13 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
+import { BatchDetailsModal } from '@/components/BatchDetailsModal';
 import { 
   Package, 
   MapPin, 
   Calendar, 
   DollarSign,
   CheckCircle,
-  Loader2
+  Loader2,
+  Eye
 } from 'lucide-react';
 
 export const RetailerInventory = () => {
@@ -19,6 +21,8 @@ export const RetailerInventory = () => {
   const { toast } = useToast();
   const [inventory, setInventory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedBatch, setSelectedBatch] = useState<any>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   useEffect(() => {
     if (profile?.id) {
@@ -131,6 +135,17 @@ export const RetailerInventory = () => {
     }
   };
 
+  const handleViewDetails = (item: any) => {
+    // Convert inventory item to batch format for BatchDetailsModal
+    const batchData = {
+      ...item.batch,
+      profiles: item.seller,
+      marketplace: item.marketplace
+    };
+    setSelectedBatch(batchData);
+    setIsDetailsModalOpen(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -163,7 +178,7 @@ export const RetailerInventory = () => {
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-secondary">
+              <div className="text-2xl font-bold text-primary">
                 {inventory.reduce((sum, item) => sum + item.quantity_purchased, 0)} kg
               </div>
               <div className="text-sm text-muted-foreground">Total Quantity</div>
@@ -171,7 +186,7 @@ export const RetailerInventory = () => {
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-accent">
+              <div className="text-2xl font-bold text-primary">
                 ₹{inventory.reduce((sum, item) => sum + item.purchase_price, 0).toLocaleString()}
               </div>
               <div className="text-sm text-muted-foreground">Total Investment</div>
@@ -262,6 +277,15 @@ export const RetailerInventory = () => {
                       variant="outline" 
                       size="sm" 
                       className="flex-1"
+                      onClick={() => handleViewDetails(item)}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      View Details
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
                       disabled
                     >
                       <CheckCircle className="h-4 w-4 mr-2" />
@@ -274,6 +298,13 @@ export const RetailerInventory = () => {
           )}
         </div>
       </div>
+
+      {/* Batch Details Modal */}
+      <BatchDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={() => setIsDetailsModalOpen(false)}
+        batch={selectedBatch}
+      />
     </div>
   );
 };

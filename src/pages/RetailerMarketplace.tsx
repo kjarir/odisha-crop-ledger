@@ -199,46 +199,6 @@ export const RetailerMarketplace = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={fetchDistributorBatches} variant="outline">
-            Refresh
-          </Button>
-          <Button 
-            onClick={async () => {
-              console.log('🔍 DEBUG: CHECKING RETAILER MARKETPLACE STATE');
-              
-              // Check marketplace table
-              const { data: marketplaceData } = await supabase
-                .from('marketplace')
-                .select('*')
-                .eq('current_seller_type', 'distributor')
-                .eq('status', 'available');
-              
-              console.log('🔍 Marketplace availability:', marketplaceData);
-              
-              // Get all batches
-              const { data: allBatches } = await supabase
-                .from('batches')
-                .select('*')
-                .order('created_at', { ascending: false });
-              
-              console.log('🔍 All batches:', allBatches);
-              
-              // Check distributor owned batches
-              const distributorBatches = allBatches?.filter(batch => 
-                batch.current_owner && batch.current_owner !== batch.farmer_id
-              ) || [];
-              
-              console.log('🔍 Distributor owned batches:', distributorBatches);
-              
-              // Force refresh
-              fetchDistributorBatches();
-            }}
-            variant="outline"
-            size="sm"
-            className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
-          >
-            🔍 Debug Marketplace
-          </Button>
           <Button asChild>
             <Link to={userType === 'distributor' ? '/distributor-inventory' : '/retailer-inventory'}>
               <Package className="h-4 w-4 mr-2" />
