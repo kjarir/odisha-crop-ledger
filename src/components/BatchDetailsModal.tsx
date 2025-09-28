@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { SupplyChainTracker } from './SupplyChainTracker';
 import { QRCodeDisplay } from './QRCodeDisplay';
 import { ImmutableSupplyChainDisplay } from './ImmutableSupplyChainDisplay';
+import { supabase } from '@/integrations/supabase/client';
 
 interface BatchDetailsModalProps {
   batch: any;
@@ -28,6 +29,7 @@ interface BatchDetailsModalProps {
 
 export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isOpen, onClose, onBuyNow }) => {
   const navigate = useNavigate();
+  const [ipfsHash, setIpfsHash] = useState<string | null>(null);
 
   if (!batch) return null;
 
@@ -35,10 +37,50 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
   const batchData = batch.batches || batch;
   const marketplaceData = batch.batches ? batch : null;
 
+  // Fetch IPFS hash from group_files table if not available in batch data
+  useEffect(() => {
+    const fetchIpfsHash = async () => {
+      if (!batchData.group_id) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('group_files')
+          .select('ipfs_hash')
+          .eq('group_id', batchData.group_id)
+          .eq('transaction_type', 'HARVEST')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        
+        if (error) {
+          console.error('Error fetching IPFS hash:', error);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          setIpfsHash(data[0].ipfs_hash);
+          console.log('✅ Found IPFS hash from group_files:', data[0].ipfs_hash);
+        }
+      } catch (error) {
+        console.error('Error fetching IPFS hash:', error);
+      }
+    };
+
+    // Only fetch if we don't already have an IPFS hash
+    if (!batchData.ipfs_hash && !batchData.ipfs_certificate_hash && batchData.group_id) {
+      fetchIpfsHash();
+    } else {
+      // Use existing IPFS hash from batch data
+      setIpfsHash(batchData.ipfs_hash || batchData.ipfs_certificate_hash);
+    }
+  }, [batchData.group_id, batchData.ipfs_hash, batchData.ipfs_certificate_hash]);
+
   // Debug logging
   console.log('🔍 BatchDetailsModal - Full batch object:', batch);
   console.log('🔍 BatchDetailsModal - batchData:', batchData);
   console.log('🔍 BatchDetailsModal - group_id:', batchData.group_id);
+  console.log('🔍 BatchDetailsModal - ipfsHash state:', ipfsHash);
+  console.log('🔍 BatchDetailsModal - batchData.ipfs_hash:', batchData.ipfs_hash);
+  console.log('🔍 BatchDetailsModal - batchData.ipfs_certificate_hash:', batchData.ipfs_certificate_hash);
   console.log('🔍 BatchDetailsModal - All batchData keys:', Object.keys(batchData));
 
   const handleVerifyCertificate = () => {
@@ -333,7 +375,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                 harvestDate={batchData.harvest_date}
                 farmerId={batchData.farmer_id}
                 blockchainHash={batchData.blockchain_hash}
-                ipfsHash={batchData.ipfs_hash || batchData.ipfs_certificate_hash}
+                ipfsHash={ipfsHash || batchData.ipfs_hash || batchData.ipfs_certificate_hash}
                 groupId={batchData.group_id}
               />
             </div>

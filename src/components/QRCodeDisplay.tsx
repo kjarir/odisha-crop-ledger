@@ -71,12 +71,30 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
         verificationUrl: `${window.location.origin}/verify?batchId=${batchId}`
       };
 
-      // Only generate verification QR code with group ID
-      const verificationUrl = groupId 
-        ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
-        : `${window.location.origin}/verify?batchId=${batchId}`;
+      // Generate certificate QR code that opens the IPFS certificate directly
+      console.log('🔍 QR Code Debug:', { 
+        ipfsHash, 
+        groupId, 
+        batchId,
+        hasIpfsHash: !!ipfsHash,
+        ipfsHashLength: ipfsHash?.length || 0
+      });
       
-      const verificationQRCode = await generateQRCodeDataURL(verificationUrl);
+      // Always try to use IPFS hash first, but provide better fallback
+      let certificateUrl = '';
+      
+      if (ipfsHash && ipfsHash.trim() !== '') {
+        certificateUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+        console.log('✅ Using IPFS certificate URL:', certificateUrl);
+      } else {
+        // Fallback to verification URL if no IPFS hash
+        certificateUrl = groupId 
+          ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
+          : `${window.location.origin}/verify?batchId=${batchId}`;
+        console.log('⚠️ No IPFS hash found, using verification URL:', certificateUrl);
+      }
+      
+      const verificationQRCode = await generateQRCodeDataURL(certificateUrl);
 
       setVerificationQR(verificationQRCode);
     } catch (error) {
@@ -131,15 +149,14 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
     try {
       let url = '';
       
-      switch (type) {
-        case 'verification':
-          url = groupId 
-            ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
-            : `${window.location.origin}/verify?batchId=${batchId}`;
-          break;
-        case 'certificate':
-          url = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
-          break;
+      // Always try to use certificate URL (IPFS link) for direct certificate access
+      if (ipfsHash && ipfsHash.trim() !== '') {
+        url = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+      } else {
+        // Fallback to verification URL if no IPFS hash
+        url = groupId 
+          ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
+          : `${window.location.origin}/verify?batchId=${batchId}`;
       }
 
       navigator.clipboard.writeText(url);
@@ -223,7 +240,7 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
         <div className="text-center space-y-2">
           <div>
             <p className="text-xs text-gray-600">
-              <strong>Scan to verify this batch!</strong> Direct link to AgriTrace verification platform.
+              <strong>Scan to view certificate!</strong> Direct link to the IPFS certificate document.
             </p>
           </div>
         </div>
@@ -256,10 +273,17 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
           
           <Button
             onClick={() => {
-              const verifyUrl = groupId 
-                ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
-                : `${window.location.origin}/verify?batchId=${batchId}`;
-              window.open(verifyUrl, '_blank');
+              let certificateUrl = '';
+              
+              if (ipfsHash && ipfsHash.trim() !== '') {
+                certificateUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+              } else {
+                certificateUrl = groupId 
+                  ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
+                  : `${window.location.origin}/verify?batchId=${batchId}`;
+              }
+              
+              window.open(certificateUrl, '_blank');
             }}
             variant="outline"
             size="sm"

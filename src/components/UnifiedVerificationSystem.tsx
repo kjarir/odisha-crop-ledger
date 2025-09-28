@@ -18,7 +18,9 @@ import {
   Package,
   Calendar,
   User,
-  MapPin
+  MapPin,
+  Upload,
+  QrCode
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -294,6 +296,78 @@ export const UnifiedVerificationSystem: React.FC = () => {
     }
   };
 
+  const handleQRUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        variant: "destructive",
+        title: "Invalid File Type",
+        description: "Please select an image file (PNG, JPG, JPEG, GIF).",
+      });
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        variant: "destructive",
+        title: "File Too Large",
+        description: "Please select an image smaller than 10MB.",
+      });
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Import QR scanner dynamically
+      const QrScanner = (await import('qr-scanner')).default;
+      
+      // Create a temporary URL for the file
+      const imageUrl = URL.createObjectURL(file);
+      
+      // Scan the QR code
+      const result = await QrScanner.scanImage(imageUrl);
+      
+      // Clean up the temporary URL
+      URL.revokeObjectURL(imageUrl);
+      
+      if (result) {
+        console.log('QR Code detected:', result);
+        
+        // Set the detected data in the input field
+        setInputValue(result);
+        
+        // Automatically trigger verification
+        await handleVerify();
+        
+        toast({
+          title: "QR Code Detected",
+          description: "QR code data extracted and verification started.",
+        });
+      } else {
+        throw new Error('No QR code found in the image');
+      }
+    } catch (error) {
+      console.error('QR scan error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to scan QR code';
+      setError(errorMessage);
+      toast({
+        variant: "destructive",
+        title: "QR Scan Failed",
+        description: errorMessage,
+      });
+    } finally {
+      setLoading(false);
+      // Clear the file input
+      event.target.value = '';
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="text-center">
@@ -335,6 +409,46 @@ export const UnifiedVerificationSystem: React.FC = () => {
             </div>
           </div>
           
+        </CardContent>
+      </Card>
+
+      {/* QR Code Upload */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <QrCode className="h-5 w-5" />
+            Upload QR Code
+          </CardTitle>
+          <CardDescription>
+            Upload a QR code image to automatically extract and verify the information
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="qr-upload">
+              Select QR Code Image
+            </Label>
+            <div className="flex items-center space-x-2">
+              <Input
+                id="qr-upload"
+                type="file"
+                accept="image/*"
+                onChange={handleQRUpload}
+                className="flex-1"
+              />
+              <Button
+                variant="outline"
+                onClick={() => document.getElementById('qr-upload')?.click()}
+                disabled={loading}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Choose File
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Supported formats: PNG, JPG, JPEG, GIF
+            </p>
+          </div>
         </CardContent>
       </Card>
 
