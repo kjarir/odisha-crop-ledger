@@ -32,15 +32,19 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
 
   if (!batch) return null;
 
+  // Handle both old batch structure and new marketplace structure
+  const batchData = batch.batches || batch;
+  const marketplaceData = batch.batches ? batch : null;
+
   const handleVerifyCertificate = () => {
-    if (batch.blockchain_id || batch.blockchain_batch_id) {
-      navigate(`/verify?batchId=${batch.blockchain_id || batch.blockchain_batch_id}`);
+    if (batchData.blockchain_id || batchData.blockchain_batch_id) {
+      navigate(`/verify?batchId=${batchData.blockchain_id || batchData.blockchain_batch_id}`);
       onClose();
     }
   };
 
   const handleViewCertificate = () => {
-    const ipfsHash = batch.ipfs_hash || batch.ipfs_certificate_hash;
+    const ipfsHash = batchData.ipfs_hash || batchData.ipfs_certificate_hash;
     if (ipfsHash) {
       window.open(`https://gateway.pinata.cloud/ipfs/${ipfsHash}`, '_blank');
     }
@@ -73,7 +77,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
             <div>
               <DialogTitle className="text-2xl font-bold flex items-center gap-2">
                 <Package className="h-6 w-6 text-primary" />
-                {batch.crop_type} - {batch.variety}
+                {batchData.crop_type} - {batchData.variety}
               </DialogTitle>
               <DialogDescription className="text-lg">
                 Complete batch information and traceability details
@@ -89,15 +93,15 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
           {/* Header Info */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Badge className={getCertificationColor(batch.certification)}>
-                {batch.certification}
+              <Badge className={getCertificationColor(batchData.certification)}>
+                {batchData.certification}
               </Badge>
-              <Badge className={getStatusColor(batch.status)}>
-                {batch.status}
+              <Badge className={getStatusColor(batchData.status)}>
+                {batchData.status}
               </Badge>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-bold text-primary">₹{batch.price_per_kg}</div>
+              <div className="text-3xl font-bold text-primary">₹{batchData.price_per_kg}</div>
               <div className="text-sm text-muted-foreground">per kg</div>
             </div>
           </div>
@@ -120,7 +124,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <Package className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <div className="font-medium">Crop Type</div>
-                      <div className="text-sm text-muted-foreground">{batch.crop_type}</div>
+                      <div className="text-sm text-muted-foreground">{batchData.crop_type}</div>
                     </div>
                   </div>
                   
@@ -128,7 +132,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <Award className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <div className="font-medium">Variety</div>
-                      <div className="text-sm text-muted-foreground">{batch.variety}</div>
+                      <div className="text-sm text-muted-foreground">{batchData.variety}</div>
                     </div>
                   </div>
 
@@ -136,7 +140,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <Package className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <div className="font-medium">Harvest Quantity</div>
-                      <div className="text-sm text-muted-foreground">{batch.harvest_quantity} kg</div>
+                      <div className="text-sm text-muted-foreground">{batchData.harvest_quantity} kg</div>
                     </div>
                   </div>
 
@@ -144,7 +148,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <Award className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <div className="font-medium">Grading</div>
-                      <div className="text-sm text-muted-foreground">{batch.grading}</div>
+                      <div className="text-sm text-muted-foreground">{batchData.grading}</div>
                     </div>
                   </div>
 
@@ -152,7 +156,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <div className="font-medium">Freshness Duration</div>
-                      <div className="text-sm text-muted-foreground">{batch.freshness_duration} days</div>
+                      <div className="text-sm text-muted-foreground">{batchData.freshness_duration} days</div>
                     </div>
                   </div>
                 </CardContent>
@@ -171,7 +175,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <div>
                       <div className="font-medium">Farmer</div>
                       <div className="text-sm text-muted-foreground">
-                        {batch.profiles?.full_name || 'Not specified'}
+                        {batchData.profiles?.full_name || 'Not specified'}
                       </div>
                     </div>
                   </div>
@@ -181,7 +185,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <div>
                       <div className="font-medium">Location</div>
                       <div className="text-sm text-muted-foreground">
-                        {batch.profiles?.farm_location || 'Not specified'}
+                        {batchData.profiles?.farm_location || 'Not specified'}
                       </div>
                     </div>
                   </div>
@@ -204,7 +208,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <div>
                       <div className="font-medium">Sowing Date</div>
                       <div className="text-sm text-muted-foreground">
-                        {new Date(batch.sowing_date).toLocaleDateString()}
+                        {new Date(batchData.sowing_date).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
@@ -214,7 +218,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <div>
                       <div className="font-medium">Harvest Date</div>
                       <div className="text-sm text-muted-foreground">
-                        {new Date(batch.harvest_date).toLocaleDateString()}
+                        {new Date(batchData.harvest_date).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
@@ -224,7 +228,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <div>
                       <div className="font-medium">Registered</div>
                       <div className="text-sm text-muted-foreground">
-                        {new Date(batch.created_at).toLocaleDateString()}
+                        {new Date(batchData.created_at).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
@@ -243,7 +247,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <div className="font-medium">Price per kg</div>
-                      <div className="text-sm text-muted-foreground">₹{batch.price_per_kg}</div>
+                      <div className="text-sm text-muted-foreground">₹{batchData.price_per_kg}</div>
                     </div>
                   </div>
                   
@@ -251,14 +255,14 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <div className="font-medium">Total Value</div>
-                      <div className="text-sm text-muted-foreground">₹{batch.total_price}</div>
+                      <div className="text-sm text-muted-foreground">₹{batchData.total_price}</div>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Blockchain & Verification */}
-              {(batch.blockchain_id || batch.blockchain_batch_id || batch.ipfs_hash || batch.ipfs_certificate_hash) && (
+              {(batchData.blockchain_id || batchData.blockchain_batch_id || batchData.ipfs_hash || batchData.ipfs_certificate_hash) && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -267,19 +271,19 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {(batch.blockchain_id || batch.blockchain_batch_id) && (
+                    {(batchData.blockchain_id || batchData.blockchain_batch_id) && (
                       <div className="flex items-center gap-3">
                         <CheckCircle className="h-4 w-4 text-green-600" />
                         <div>
                           <div className="font-medium">Blockchain ID</div>
                           <div className="text-sm text-muted-foreground font-mono">
-                            {batch.blockchain_id || batch.blockchain_batch_id}
+                            {batchData.blockchain_id || batchData.blockchain_batch_id}
                           </div>
                         </div>
                       </div>
                     )}
                     
-                    {(batch.ipfs_hash || batch.ipfs_certificate_hash) && (
+                    {(batchData.ipfs_hash || batchData.ipfs_certificate_hash) && (
                       <div className="flex items-center gap-3">
                         <ExternalLink className="h-4 w-4 text-blue-600" />
                         <div>
@@ -296,19 +300,20 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
 
           {/* Supply Chain Tracking */}
             <div className="mt-6">
-              <ImmutableSupplyChainDisplay batchId={batch.id} />
+              <ImmutableSupplyChainDisplay batchId={batchData.id} />
             </div>
 
             {/* QR Code Display */}
             <div className="mt-6">
               <QRCodeDisplay
-                batchId={batch.blockchain_id || batch.blockchain_batch_id || batch.id}
-                cropType={batch.crop_type}
-                variety={batch.variety}
-                harvestDate={batch.harvest_date}
-                farmerId={batch.farmer_id}
-                blockchainHash={batch.blockchain_hash}
-                ipfsHash={batch.ipfs_hash || batch.ipfs_certificate_hash}
+                batchId={batchData.blockchain_id || batchData.blockchain_batch_id || batchData.id}
+                cropType={batchData.crop_type}
+                variety={batchData.variety}
+                harvestDate={batchData.harvest_date}
+                farmerId={batchData.farmer_id}
+                blockchainHash={batchData.blockchain_hash}
+                ipfsHash={batchData.ipfs_hash || batchData.ipfs_certificate_hash}
+                groupId={batchData.group_id}
               />
             </div>
 
@@ -317,19 +322,19 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
             <Button 
               size="lg" 
               className="flex-1 min-w-[200px]"
-              disabled={batch.status !== 'available'}
+              disabled={batchData.status !== 'available'}
               onClick={() => {
-                if (onBuyNow && batch.status === 'available') {
+                if (onBuyNow && batchData.status === 'available') {
                   onBuyNow(batch);
                   onClose();
                 }
               }}
             >
               <DollarSign className="h-4 w-4 mr-2" />
-              {batch.status === 'available' ? 'Buy Now' : 'Reserved'}
+              {batchData.status === 'available' ? 'Buy Now' : 'Reserved'}
             </Button>
             
-            {(batch.blockchain_id || batch.blockchain_batch_id) && (
+            {(batchData.blockchain_id || batchData.blockchain_batch_id) && (
               <Button 
                 variant="outline" 
                 size="lg"
@@ -340,7 +345,7 @@ export const BatchDetailsModal: React.FC<BatchDetailsModalProps> = ({ batch, isO
               </Button>
             )}
             
-            {(batch.ipfs_hash || batch.ipfs_certificate_hash) && (
+            {(batchData.ipfs_hash || batchData.ipfs_certificate_hash) && (
               <Button 
                 variant="outline" 
                 size="lg"

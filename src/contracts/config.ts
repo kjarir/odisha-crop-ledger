@@ -1,19 +1,24 @@
 // Contract configuration
+// Note: This contract address needs to be deployed on the network you're using
 export const CONTRACT_ADDRESS = "0xf8e81D47203A594245E36C48e151709F0C19fBe8";
 
 // Network configuration
 export const NETWORK_CONFIG = {
-  // You can add more networks here
   sepolia: {
     chainId: 11155111,
     name: "Sepolia Testnet",
-    rpcUrl: "https://sepolia.infura.io/v3/YOUR_INFURA_KEY", // Replace with your Infura key
-    blockExplorer: "https://sepolia.etherscan.io"
+    rpcUrl: "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
+    blockExplorer: "https://sepolia.etherscan.io/"
   },
-  // Add other networks as needed
+  monad: {
+    chainId: 10135,
+    name: "Monad Testnet",
+    rpcUrl: "https://testnet-rpc.monad.xyz/",
+    blockExplorer: "https://testnet.monadexplorer.com/"
+  }
 };
 
-// Default network
+// Default network - Sepolia (more reliable)
 export const DEFAULT_NETWORK = "sepolia";
 
 // Pinata configuration

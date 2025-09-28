@@ -33,9 +33,9 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
   onClose, 
   onPurchaseComplete 
 }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
-  const { signer } = useWeb3();
+  const { signer, account } = useWeb3();
 
   if (!batch || !isOpen) return null;
 
@@ -49,6 +49,15 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
       return;
     }
 
+    console.log('🔍 DEBUG: Starting purchase with profile:', profile);
+    console.log('🔍 DEBUG: Profile user_type:', profile?.user_type);
+    console.log('🔍 DEBUG: Profile full_name:', profile?.full_name);
+    console.log('🔍 DEBUG: All profile fields:', Object.keys(profile || {}));
+    console.log('🔍 DEBUG: Batch object:', batch);
+    console.log('🔍 DEBUG: Batch keys:', Object.keys(batch || {}));
+    console.log('🔍 DEBUG: Batch batch_id:', batch?.batch_id);
+    console.log('🔍 DEBUG: Batch id:', batch?.id);
+
     if (!address.trim()) {
       toast({
         variant: "destructive",
@@ -59,175 +68,366 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
     }
 
     try {
-      const unitPrice = batch.price_per_kg;
+      console.log('🔍 DEBUG: Price calculation inputs:', {
+        batchPrice: batch.price,
+        batchQuantity: batch.quantity,
+        requestedQuantity: quantity,
+        batchObject: batch
+      });
+      
+      console.log('🔍 DEBUG: Complete batch object structure:', JSON.stringify(batch, null, 2));
+      console.log('🔍 DEBUG: Batch object keys:', Object.keys(batch));
+      console.log('🔍 DEBUG: Batch object values:', Object.values(batch));
+      
+      // Try to get price and quantity from different possible sources
+      // Based on the actual batch object structure, use price_per_kg and harvest_quantity
+      const batchPrice = batch.price_per_kg || batch.price || batch.batches?.price_per_kg || batch.batches?.price || batch.batches?.total_price;
+      const batchQuantity = batch.harvest_quantity || batch.quantity || batch.batches?.harvest_quantity || batch.batches?.quantity;
+      
+      console.log('🔍 DEBUG: Price and quantity fallback:', {
+        batchPrice,
+        batchQuantity,
+        batchPriceSource: batch.price ? 'batch.price' : batch.batches?.price ? 'batch.batches.price' : batch.batches?.price_per_kg ? 'batch.batches.price_per_kg' : batch.batches?.total_price ? 'batch.batches.total_price' : 'none',
+        batchQuantitySource: batch.quantity ? 'batch.quantity' : batch.batches?.quantity ? 'batch.batches.quantity' : batch.batches?.harvest_quantity ? 'batch.batches.harvest_quantity' : 'none'
+      });
+      
+      // Use marketplace price and quantity directly
+      const unitPrice = Math.round(batchPrice / batchQuantity);
       const totalPrice = quantity * unitPrice;
       const deliveryFee = totalPrice > 1000 ? 0 : 50;
       const finalTotal = totalPrice + deliveryFee;
 
-      // For the new group-based system, we don't need complex transaction verification
-      // Just check if the batch has a group_id
-      if (!batch.group_id) {
-        throw new Error('Batch does not have a group ID - cannot process purchase');
+      // Validate that we have valid price and quantity
+      if (isNaN(batchPrice) || isNaN(batchQuantity) || batchPrice <= 0 || batchQuantity <= 0) {
+        throw new Error(`Invalid price or quantity: price=${batchPrice}, quantity=${batchQuantity}`);
       }
       
-      // Get buyer name from profile
-      let buyerName = 'Unknown Buyer';
+      console.log('🔍 DEBUG: Price calculation results:', {
+        unitPrice,
+        totalPrice,
+        deliveryFee,
+        finalTotal
+      });
+
+      // Check if enough quantity is available
+      if (quantity > batch.quantity) {
+        throw new Error(`Only ${batch.quantity} kg available, but you requested ${quantity} kg`);
+      }
+
+      // Use the new purchase function
+      console.log('🔍 DEBUG: Purchasing from marketplace...');
+      
+      // Get the correct batch ID for database updates (this should be the batch UUID)
+      const batchId = batch.batch_id || batch.id || batch.batches?.id;
+      console.log('🔍 DEBUG: Using batch ID for update:', batchId);
+      
+      // Get the marketplace ID for inventory
+      // Since this batch object is from the batches table, we need to find the corresponding marketplace record
+      let marketplaceId = null;
+      
       try {
-        const { data: profile } = await (supabase as any)
-          .from('profiles')
-          .select('full_name')
-          .eq('user_id', user?.id)
+        const { data: marketplaceRecord } = await supabase
+          .from('marketplace')
+          .select('id')
+          .eq('batch_id', batchId)
           .single();
         
-        if (profile?.full_name) {
-          buyerName = profile.full_name;
-        } else if (user?.name) {
-          buyerName = user.name;
-        } else if (user?.email) {
-          // Extract name from email as fallback
-          const emailName = user.email.split('@')[0];
-          buyerName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
-        }
+        marketplaceId = marketplaceRecord?.id;
+        console.log('🔍 DEBUG: Found marketplace record:', marketplaceRecord);
+        console.log('🔍 DEBUG: Using marketplace ID for inventory:', marketplaceId);
       } catch (error) {
-        console.warn('Could not fetch buyer name from profile:', error);
-        if (user?.name) {
-          buyerName = user.name;
-        } else if (user?.email) {
-          const emailName = user.email.split('@')[0];
-          buyerName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
-        }
-      }
-      const currentOwner = batch.farmer_name || 'Jarir Khan';
-      
-      // Use the single-step group manager for purchase
-      const { pdfBlob, ipfsHash } = await singleStepGroupManager.uploadPurchaseCertificate(
-        batch.group_id,
-        {
-          batchId: batch.id,
-          from: currentOwner,
-          to: buyerName,
-          quantity: quantity,
-          pricePerKg: unitPrice,
-          timestamp: new Date().toISOString()
-        }
-      );
-
-      // Record transaction on blockchain
-      console.log('🔍 DEBUG: Recording purchase transaction on blockchain...');
-      if (!signer) {
-        throw new Error('Wallet not connected. Please connect your wallet to complete the purchase.');
+        console.warn('🔍 DEBUG: Could not find marketplace record for batch:', batchId, error);
       }
       
-      // Update blockchain transaction manager with signer
-      blockchainTransactionManager.updateSigner(signer);
+      if (!batchId) {
+        throw new Error('No valid batch ID found for update');
+      }
       
-      try {
-        const blockchainTransaction = await blockchainTransactionManager.recordPurchaseTransaction(
-          batch.id,
-          batch.current_owner || batch.farmer_id, // From current owner
-          user.id, // To buyer
-          quantity,
-          finalTotal,
-          'PURCHASE'
-        );
-        console.log('🔍 DEBUG: Blockchain transaction recorded:', blockchainTransaction);
-      } catch (blockchainError) {
-        console.error('🔍 DEBUG: Blockchain transaction failed:', blockchainError);
-        // Continue with database transaction even if blockchain fails
-        console.log('🔍 DEBUG: Continuing with database transaction despite blockchain error');
+      if (!marketplaceId) {
+        console.warn('🔍 DEBUG: No marketplace ID found, skipping inventory creation');
       }
 
-      // Create transaction record
-      const transactionData = {
-        batch_id: batch.id,
-        buyer_id: user.id,
-        seller_id: batch.farmer_id || batch.current_owner || 'unknown_farmer',
-        transaction_type: 'PURCHASE',
-        quantity: quantity,
-        price: finalTotal,
-        status: 'completed'
-      };
-
-      console.log('🔍 DEBUG: Creating transaction with data:', transactionData);
-      
-      const { data: transactionResult, error: transactionError } = await supabase
-        .from('transactions')
-        .insert(transactionData)
-        .select();
-
-      console.log('🔍 DEBUG: Transaction creation result:', { transactionResult, transactionError });
-
-      if (transactionError) {
-        throw new Error(`Failed to create transaction: ${transactionError.message}`);
-      }
-
-      // Update batch ownership
-      const batchUpdateData = {
-        current_owner: user.id,
-        status: 'available' // Keep available for other purchases
-      };
-
-      console.log('🔍 DEBUG: Updating batch with data:', batchUpdateData, 'for batch ID:', batch.id);
-      console.log('🔍 DEBUG: User ID for ownership:', user.id);
-      console.log('🔍 DEBUG: Batch ID to update:', batch.id);
-      console.log('🔍 DEBUG: Batch ID type:', typeof batch.id);
-      console.log('🔍 DEBUG: Full batch object:', batch);
-
-      // First, check if the batch exists
-      const { data: existingBatch, error: checkError } = await supabase
+      // Update the batch ownership directly
+      const { error: updateError } = await supabase
         .from('batches')
-        .select('*')
-        .eq('id', batch.id)
-        .single();
+        .update({ 
+          current_owner: profile?.id,
+          status: 'available'
+        })
+        .eq('id', batchId);
 
-      console.log('🔍 DEBUG: Existing batch check:', { existingBatch, checkError });
-
-      if (checkError) {
-        console.error('🔍 ERROR: Batch not found:', checkError);
-        throw new Error(`Batch not found: ${checkError.message}`);
+      if (updateError) {
+        throw new Error(`Purchase failed: ${updateError.message}`);
       }
 
-      const { data: batchResult, error: batchError } = await supabase
-        .from('batches')
-        .update(batchUpdateData)
-        .eq('id', batch.id)
-        .select();
+      // Update marketplace to show new owner (not sold, but transferred)
+      const { error: marketplaceError } = await supabase
+        .from('marketplace')
+        .update({ 
+          status: 'available', // Keep as available for the new owner
+          current_seller_id: profile?.id,
+          current_seller_type: profile?.full_name?.toLowerCase() === 'distributor' ? 'distributor' : 'retailer'
+        })
+        .eq('id', batch.id);
 
-      console.log('🔍 DEBUG: Batch update result:', { batchResult, batchError });
-      console.log('🔍 DEBUG: Batch ID being updated:', batch.id);
-      console.log('🔍 DEBUG: New owner ID:', user.id);
-
-      if (batchError) {
-        console.error('🔍 ERROR: Batch update failed:', batchError);
-        throw new Error(`Failed to update batch: ${batchError.message}`);
-      } else {
-        console.log('🔍 SUCCESS: Batch ownership updated successfully');
+      if (marketplaceError) {
+        console.warn('Failed to update marketplace:', marketplaceError);
+        // Don't fail the purchase for this
       }
 
-      // Remove batch from farmer-distributor marketplace after purchase
-      try {
-        const { error: removeError } = await supabase.rpc(
-          'remove_batch_from_marketplace',
-          { 
-            batch_id_param: batch.id,
-            marketplace_type_param: 'farmer_distributor'
-          }
-        );
+      console.log('🔍 DEBUG: Purchase successful!');
+      console.log('🔍 DEBUG: Profile data:', profile);
+      console.log('🔍 DEBUG: User type:', profile?.user_type);
+
+      // Create inventory entry for distributor/retailer
+      // Check if user is distributor based on full_name or user_type (case-insensitive)
+      const isDistributor = profile?.user_type === 'distributor' || 
+                           profile?.full_name?.toLowerCase() === 'distributor';
+      const isRetailer = profile?.user_type === 'retailer' || 
+                        profile?.full_name?.toLowerCase() === 'retailer';
+      
+      console.log('🔍 DEBUG: User type check:', {
+        user_type: profile?.user_type,
+        full_name: profile?.full_name,
+        isDistributor,
+        isRetailer
+      });
+      
+      if (isDistributor && marketplaceId) {
+        const inventoryData = {
+          distributor_id: profile.id,
+          marketplace_id: marketplaceId, // Use the marketplace table's integer ID
+          quantity_purchased: quantity,
+          purchase_price: finalTotal,
+          created_at: new Date().toISOString()
+        };
         
-        if (removeError) {
-          console.error('🔍 WARNING: Failed to remove from marketplace:', removeError);
+        console.log('🔍 DEBUG: Distributor inventory data before insert:', inventoryData);
+        console.log('🔍 DEBUG: Batch object keys:', Object.keys(batch));
+        console.log('🔍 DEBUG: Batch.id type:', typeof batch.id, 'value:', batch.id);
+        console.log('🔍 DEBUG: Full batch object structure:', JSON.stringify(batch, null, 2));
+
+        console.log('🔍 DEBUG: Creating distributor inventory entry:', inventoryData);
+
+        const { data: inventoryResult, error: inventoryError } = await supabase
+          .from('distributor_inventory')
+          .insert(inventoryData)
+          .select()
+          .single();
+
+        if (inventoryError) {
+          console.error('❌ Distributor inventory creation error:', inventoryError);
+          console.error('❌ Inventory data that failed:', inventoryData);
         } else {
-          console.log('🔍 SUCCESS: Batch removed from farmer-distributor marketplace');
+          console.log('✅ Distributor inventory entry created successfully:', inventoryResult);
         }
-      } catch (removeError) {
-        console.error('🔍 WARNING: Error removing from marketplace:', removeError);
+      } else if (isDistributor && !marketplaceId) {
+        console.log('⚠️ Skipping distributor inventory creation - no marketplace ID found');
+      } else if (isRetailer && marketplaceId) {
+        const inventoryData = {
+          retailer_id: profile.id,
+          marketplace_id: marketplaceId, // Use the marketplace table's integer ID
+          quantity_purchased: quantity,
+          purchase_price: finalTotal,
+          created_at: new Date().toISOString()
+        };
+        
+        console.log('🔍 DEBUG: Inventory data before insert:', inventoryData);
+        console.log('🔍 DEBUG: Batch object keys:', Object.keys(batch));
+        console.log('🔍 DEBUG: Batch.id type:', typeof batch.id, 'value:', batch.id);
+        console.log('🔍 DEBUG: Full batch object structure:', JSON.stringify(batch, null, 2));
+
+        console.log('🔍 DEBUG: Creating retailer inventory entry:', inventoryData);
+
+        const { data: inventoryResult, error: inventoryError } = await supabase
+          .from('retailer_inventory')
+          .insert(inventoryData)
+          .select()
+          .single();
+
+        if (inventoryError) {
+          console.error('❌ Retailer inventory creation error:', inventoryError);
+          console.error('❌ Inventory data that failed:', inventoryData);
+        } else {
+          console.log('✅ Retailer inventory entry created successfully:', inventoryResult);
+        }
+      } else if (isRetailer && !marketplaceId) {
+        console.log('⚠️ Skipping retailer inventory creation - no marketplace ID found');
+      } else {
+        console.log('🔍 DEBUG: No inventory creation - user type check failed');
+        console.log('🔍 DEBUG: User type:', profile?.user_type);
+        console.log('🔍 DEBUG: Full name:', profile?.full_name);
+        console.log('🔍 DEBUG: Is distributor:', isDistributor);
+        console.log('🔍 DEBUG: Is retailer:', isRetailer);
+        console.log('🔍 DEBUG: Profile object:', profile);
+      }
+
+      // Record transaction on blockchain (optional)
+      if (signer && blockchainTransactionManager && account) {
+        try {
+          blockchainTransactionManager.updateSigner(signer);
+          // Get seller's wallet address from the batch data
+          let sellerWalletAddress = batch.profiles?.wallet_address;
+          
+          // If wallet address is not available, try to fetch it from the seller's profile
+          if (!sellerWalletAddress) {
+            console.log('🔍 DEBUG: Seller wallet address not found in batch, fetching from profile...');
+            
+            // Try to get seller ID from different sources
+            const sellerId = batch.current_owner || batch.current_seller_id || batch.farmer_id;
+            console.log('🔍 DEBUG: Seller ID for wallet lookup:', sellerId);
+            
+            if (sellerId) {
+              try {
+                const { data: sellerProfile } = await supabase
+                  .from('profiles')
+                  .select('wallet_address, full_name, email')
+                  .eq('id', sellerId)
+                  .single();
+                
+                sellerWalletAddress = sellerProfile?.wallet_address;
+                console.log('🔍 DEBUG: Fetched seller profile:', sellerProfile);
+                console.log('🔍 DEBUG: Seller wallet address from profile:', sellerWalletAddress);
+                
+                // If still no wallet address, try to use a default or generate one
+                if (!sellerWalletAddress) {
+                  console.warn('🔍 DEBUG: Seller has no wallet address in profile, using fallback...');
+                  // Generate a placeholder wallet address for demo purposes
+                  // In production, you would want to prompt the seller to connect their wallet
+                  sellerWalletAddress = `0x${sellerId.replace(/-/g, '').substring(0, 40)}`;
+                  console.log('🔍 DEBUG: Generated placeholder wallet address:', sellerWalletAddress);
+                }
+              } catch (error) {
+                console.warn('🔍 DEBUG: Could not fetch seller profile:', error);
+                // Use a default wallet address for demo purposes
+                sellerWalletAddress = '0x0000000000000000000000000000000000000000';
+                console.log('🔍 DEBUG: Using default wallet address due to error:', sellerWalletAddress);
+              }
+            } else {
+              console.warn('🔍 DEBUG: No seller ID found for wallet lookup');
+              // Use a default wallet address for demo purposes
+              sellerWalletAddress = '0x0000000000000000000000000000000000000000';
+              console.log('🔍 DEBUG: Using default wallet address:', sellerWalletAddress);
+            }
+          }
+          
+          console.log('🔍 DEBUG: Seller wallet address sources:', {
+            batchProfilesWalletAddress: batch.profiles?.wallet_address,
+            batchBatchesProfilesWalletAddress: batch.batches?.profiles?.wallet_address,
+            batchCurrentSellerId: batch.current_seller_id,
+            batchCurrentOwner: batch.current_owner,
+            batchFarmerId: batch.farmer_id,
+            finalSellerWalletAddress: sellerWalletAddress
+          });
+          
+          console.log('🔍 DEBUG: Wallet address check:', {
+            batchProfiles: batch.profiles,
+            sellerWalletAddress,
+            account,
+            batchCurrentSellerId: batch.current_seller_id
+          });
+          
+          // Validate that we have valid Ethereum addresses
+          if (!sellerWalletAddress || !account) {
+            console.warn('🔍 DEBUG: Missing wallet addresses for blockchain transaction');
+            console.warn('🔍 DEBUG: sellerWalletAddress:', sellerWalletAddress);
+            console.warn('🔍 DEBUG: account:', account);
+            console.warn('🔍 DEBUG: Skipping blockchain transaction, continuing with database transaction');
+            // Don't return - continue with the purchase without blockchain transaction
+          } else {
+            console.log('🔍 DEBUG: Blockchain transaction addresses:', {
+              seller: sellerWalletAddress,
+              buyer: account,
+              batchId: batchId
+            });
+            
+            const blockchainTransaction = await blockchainTransactionManager.recordPurchaseTransaction(
+              batchId, // Use the validated batch ID
+              sellerWalletAddress, // From current seller (Ethereum address)
+              account, // To buyer (current wallet address)
+              quantity,
+              finalTotal,
+              'PURCHASE'
+            );
+            console.log('🔍 DEBUG: Blockchain transaction recorded:', blockchainTransaction);
+            
+            // Generate and upload purchase certificate to the same group
+            try {
+              console.log('🔍 DEBUG: Generating purchase certificate...');
+              
+              // Get the group ID from the batch data
+              // The group_id is directly on the batch object, not nested in batch.batches
+              const groupId = batch.group_id || batch.batches?.group_id;
+              console.log('🔍 DEBUG: Group ID lookup:', {
+                batchGroupId: batch.group_id,
+                batchBatchesGroupId: batch.batches?.group_id,
+                finalGroupId: groupId
+              });
+              
+              if (!groupId) {
+                console.warn('⚠️ No group ID found for batch, skipping certificate generation');
+                console.warn('🔍 DEBUG: Batch object keys:', Object.keys(batch));
+                console.warn('🔍 DEBUG: Batch object:', batch);
+                return;
+              }
+              
+              const purchaseData = {
+                batchId: batchId, // Use the validated batch ID
+                from: batch.profiles?.full_name || 'Unknown Seller',
+                to: profile?.full_name || 'Unknown Buyer',
+                quantity: quantity,
+                pricePerKg: Math.round(finalTotal / quantity),
+                timestamp: new Date().toISOString()
+              };
+              
+              console.log('🔍 DEBUG: Purchase data:', purchaseData);
+              console.log('🔍 DEBUG: Group ID:', groupId);
+              
+              const purchaseCertificateResult = await singleStepGroupManager.uploadPurchaseCertificate(
+                groupId,
+                purchaseData
+              );
+              console.log('✅ Purchase certificate generated:', purchaseCertificateResult);
+              
+              // Generate QR code for the purchase transaction
+              try {
+                const { generateTransactionReceiptQR } = await import('@/utils/qrCodeGenerator');
+                const qrCodeDataURL = await generateTransactionReceiptQR({
+                  transactionId: transactionResult.id,
+                  batchId: batchId,
+                  from: batch.profiles?.full_name || 'Unknown Seller',
+                  to: profile?.full_name || 'Unknown Buyer',
+                  quantity: quantity,
+                  price: finalTotal,
+                  timestamp: new Date().toISOString(),
+                  ipfsHash: purchaseCertificateResult?.ipfsHash,
+                  blockchainHash: blockchainTransaction?.transactionHash
+                });
+                
+                console.log('✅ QR code generated for purchase transaction');
+                
+                // Store QR code in localStorage for later access
+                localStorage.setItem(`purchase_qr_${transactionResult.id}`, qrCodeDataURL);
+              } catch (qrError) {
+                console.error('❌ QR code generation failed:', qrError);
+                // Continue even if QR code generation fails
+              }
+            } catch (certError) {
+              console.error('❌ Purchase certificate generation failed:', certError);
+              // Continue even if certificate generation fails
+            }
+          }
+        } catch (blockchainError) {
+          console.error('🔍 DEBUG: Blockchain transaction failed:', blockchainError);
+          // Continue even if blockchain fails
+        }
       }
 
       onPurchaseComplete();
       onClose();
       toast({
         title: "Purchase Successful!",
-        description: `Your order for ${quantity}kg of ${batch.crop_type} has been placed. The certificate has been updated with your purchase details.`,
+        description: `Your order for ${quantity}kg of ${batch.batches?.crop_type || 'crop'} has been placed. The item is now in your inventory.`,
       });
     } catch (error) {
       console.error('Purchase error:', error);
@@ -245,10 +445,10 @@ export const UltraSimplePurchaseModal: React.FC<UltraSimplePurchaseModalProps> =
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShoppingCart className="h-5 w-5" />
-            Purchase {batch.crop_type}
+            Purchase {batch.batches?.crop_type || 'Crop'}
           </DialogTitle>
           <DialogDescription>
-            Complete your purchase of {batch.crop_type} - {batch.variety}
+            Complete your purchase of {batch.batches?.crop_type || 'Crop'} - {batch.batches?.variety || 'Variety'}
           </DialogDescription>
         </DialogHeader>
 
@@ -298,7 +498,7 @@ const PurchaseForm: React.FC<{
             </div>
             <div>
               <Label className="text-sm font-medium text-gray-500">Available Quantity</Label>
-              <p className="font-medium">{batch.harvest_quantity} kg</p>
+              <p className="font-medium">{batch.quantity} kg</p>
             </div>
             <div>
               <Label className="text-sm font-medium text-gray-500">Price per kg</Label>
@@ -323,13 +523,13 @@ const PurchaseForm: React.FC<{
               id="quantity"
               type="number"
               min="1"
-              max={batch.harvest_quantity}
+              max={batch.quantity}
               value={quantity}
               onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
               className="mt-1"
             />
             <p className="text-sm text-muted-foreground mt-1">
-              Available: {batch.harvest_quantity} kg
+              Available: {batch.quantity} kg
             </p>
           </div>
 

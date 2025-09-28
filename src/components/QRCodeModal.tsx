@@ -12,6 +12,7 @@ interface QRCodeModalProps {
   farmerId: string;
   blockchainHash?: string;
   ipfsHash?: string;
+  groupId?: string;
 }
 
 export const QRCodeModal: React.FC<QRCodeModalProps> = ({
@@ -23,7 +24,8 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
   harvestDate,
   farmerId,
   blockchainHash,
-  ipfsHash
+  ipfsHash,
+  groupId
 }) => {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -43,6 +45,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({
           farmerId={farmerId}
           blockchainHash={blockchainHash}
           ipfsHash={ipfsHash}
+          groupId={groupId}
         />
       </DialogContent>
     </Dialog>

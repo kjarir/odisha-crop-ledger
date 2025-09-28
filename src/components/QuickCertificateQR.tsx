@@ -147,7 +147,7 @@ export const QuickCertificateQR: React.FC<QuickCertificateQRProps> = ({
             {cropType} - {variety}
           </p>
           <p className="text-xs font-mono text-gray-400">
-            {batchId.substring(0, 8)}...
+            {String(batchId).substring(0, 8)}...
           </p>
         </div>
       </CardContent>

@@ -1,444 +1,538 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
-import { verificationSystem, VerificationResult, CertificateInfo } from '@/utils/verificationSystem';
 import { 
-  Search, 
-  Download, 
   CheckCircle, 
-  AlertCircle, 
-  Loader2,
-  Package,
-  Users,
-  Clock,
-  MapPin,
-  DollarSign,
-  FileText,
-  ExternalLink,
+  XCircle, 
+  AlertTriangle, 
+  ExternalLink, 
+  Download,
   QrCode,
-  Hash
+  Package,
+  User,
+  Calendar,
+  MapPin,
+  Hash,
+  Loader2
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { parseQRCodeData } from '@/utils/qrCodeUtils';
 
-export const ComprehensiveVerificationSystem: React.FC = () => {
-  const [batchId, setBatchId] = useState('');
-  const [groupId, setGroupId] = useState('');
-  const [batchResult, setBatchResult] = useState<VerificationResult | null>(null);
-  const [groupResult, setGroupResult] = useState<VerificationResult | null>(null);
+interface VerificationResult {
+  isValid: boolean;
+  type: 'batch' | 'certificate' | 'transaction' | 'verification';
+  data: any;
+  stage: 'farmer' | 'distributor' | 'retailer';
+  message: string;
+  details?: any;
+}
+
+interface ComprehensiveVerificationSystemProps {
+  qrData?: string;
+  onClose?: () => void;
+  className?: string;
+}
+
+export const ComprehensiveVerificationSystem: React.FC<ComprehensiveVerificationSystemProps> = ({
+  qrData,
+  onClose,
+  className = ""
+}) => {
+  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [downloading, setDownloading] = useState<string | null>(null);
+  const [batchDetails, setBatchDetails] = useState<any>(null);
+  const [transactionHistory, setTransactionHistory] = useState<any[]>([]);
   const { toast } = useToast();
 
-  const handleBatchVerification = async () => {
-    if (!batchId.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter a Batch ID"
-      });
-      return;
+  useEffect(() => {
+    if (qrData) {
+      verifyQRCode(qrData);
     }
+  }, [qrData]);
 
-    setLoading(true);
+  const verifyQRCode = async (data: string) => {
     try {
-      const result = await verificationSystem.verifyByBatchId(batchId.trim());
-      setBatchResult(result);
-      
-      if (result.success) {
-        toast({
-          title: "Verification Successful",
-          description: `Found ${result.certificates.length} certificates for batch ${batchId}`
-        });
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Verification Failed",
-          description: result.error || "Unknown error occurred"
-        });
+      setLoading(true);
+      setVerificationResult(null);
+      setBatchDetails(null);
+      setTransactionHistory([]);
+
+      // Try to parse as JSON first (structured QR data)
+      let parsedData;
+      try {
+        parsedData = JSON.parse(data);
+      } catch {
+        // If not JSON, treat as URL or simple string
+        parsedData = { type: 'url', data: data };
       }
+
+      let result: VerificationResult;
+
+      if (parsedData.type === 'batch') {
+        result = await verifyBatchQR(parsedData);
+      } else if (parsedData.type === 'certificate') {
+        result = await verifyCertificateQR(parsedData);
+      } else if (parsedData.type === 'transaction') {
+        result = await verifyTransactionQR(parsedData);
+      } else if (parsedData.type === 'verification') {
+        result = await verifyVerificationQR(parsedData);
+      } else if (data.includes('verify?batchId=')) {
+        // Handle verification URLs
+        const batchId = extractBatchIdFromUrl(data);
+        if (batchId) {
+          result = await verifyBatchById(batchId);
+        } else {
+          result = {
+            isValid: false,
+            type: 'verification',
+            data: data,
+            stage: 'farmer',
+            message: 'Invalid verification URL format'
+          };
+        }
+      } else if (data.includes('gateway.pinata.cloud/ipfs/')) {
+        // Handle IPFS certificate URLs
+        result = await verifyIPFSCertificate(data);
+      } else {
+        result = {
+          isValid: false,
+          type: 'verification',
+          data: data,
+          stage: 'farmer',
+          message: 'Unknown QR code format'
+        };
+      }
+
+      setVerificationResult(result);
+
+      // If it's a valid batch, fetch additional details
+      if (result.isValid && (result.type === 'batch' || result.type === 'verification')) {
+        await fetchBatchDetails(result.data.batchId || result.data.id);
+      }
+
     } catch (error) {
-      console.error('Batch verification error:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to verify batch"
+      console.error('Error verifying QR code:', error);
+      setVerificationResult({
+        isValid: false,
+        type: 'verification',
+        data: data,
+        stage: 'farmer',
+        message: 'Error during verification: ' + (error as Error).message
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGroupVerification = async () => {
-    if (!groupId.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter a Group ID"
-      });
-      return;
-    }
-
-    setLoading(true);
+  const verifyBatchQR = async (data: any): Promise<VerificationResult> => {
     try {
-      const result = await verificationSystem.verifyByGroupId(groupId.trim());
-      setGroupResult(result);
+      // Verify batch exists in database
+      const { data: batch, error } = await supabase
+        .from('batches')
+        .select('*, profiles(*)')
+        .eq('id', data.batchId)
+        .single();
+
+      if (error || !batch) {
+        return {
+          isValid: false,
+          type: 'batch',
+          data: data,
+          stage: 'farmer',
+          message: 'Batch not found in database'
+        };
+      }
+
+      // Determine stage based on current owner
+      let stage: 'farmer' | 'distributor' | 'retailer' = 'farmer';
+      if (batch.current_owner !== batch.farmer_id) {
+        // Check if owner is distributor or retailer
+        const { data: ownerProfile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', batch.current_owner)
+          .single();
+        
+        if (ownerProfile?.full_name?.toLowerCase().includes('distributor')) {
+          stage = 'distributor';
+        } else if (ownerProfile?.full_name?.toLowerCase().includes('retailer')) {
+          stage = 'retailer';
+        }
+      }
+
+      return {
+        isValid: true,
+        type: 'batch',
+        data: { ...data, batch },
+        stage: stage,
+        message: `Valid batch found - currently at ${stage} stage`
+      };
+    } catch (error) {
+      return {
+        isValid: false,
+        type: 'batch',
+        data: data,
+        stage: 'farmer',
+        message: 'Error verifying batch: ' + (error as Error).message
+      };
+    }
+  };
+
+  const verifyCertificateQR = async (data: any): Promise<VerificationResult> => {
+    try {
+      // Verify certificate exists and is accessible
+      if (data.ipfsHash) {
+        const response = await fetch(`https://gateway.pinata.cloud/ipfs/${data.ipfsHash}`, {
+          method: 'HEAD'
+        });
+        
+        if (response.ok) {
+          return {
+            isValid: true,
+            type: 'certificate',
+            data: data,
+            stage: 'farmer',
+            message: 'Certificate is valid and accessible'
+          };
+        }
+      }
+
+      return {
+        isValid: false,
+        type: 'certificate',
+        data: data,
+        stage: 'farmer',
+        message: 'Certificate not accessible or invalid'
+      };
+    } catch (error) {
+      return {
+        isValid: false,
+        type: 'certificate',
+        data: data,
+        stage: 'farmer',
+        message: 'Error verifying certificate: ' + (error as Error).message
+      };
+    }
+  };
+
+  const verifyTransactionQR = async (data: any): Promise<VerificationResult> => {
+    try {
+      // Verify transaction exists in database
+      const { data: transaction, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('id', data.id)
+        .single();
+
+      if (error || !transaction) {
+        return {
+          isValid: false,
+          type: 'transaction',
+          data: data,
+          stage: 'distributor',
+          message: 'Transaction not found in database'
+        };
+      }
+
+      return {
+        isValid: true,
+        type: 'transaction',
+        data: { ...data, transaction },
+        stage: data.metadata?.stage === 'retailer_purchase' ? 'retailer' : 'distributor',
+        message: 'Valid transaction found'
+      };
+    } catch (error) {
+      return {
+        isValid: false,
+        type: 'transaction',
+        data: data,
+        stage: 'distributor',
+        message: 'Error verifying transaction: ' + (error as Error).message
+      };
+    }
+  };
+
+  const verifyVerificationQR = async (data: any): Promise<VerificationResult> => {
+    return {
+      isValid: true,
+      type: 'verification',
+      data: data,
+      stage: data.metadata?.stage || 'farmer',
+      message: 'Verification QR code is valid'
+    };
+  };
+
+  const verifyBatchById = async (batchId: string): Promise<VerificationResult> => {
+    try {
+      const { data: batch, error } = await supabase
+        .from('batches')
+        .select('*, profiles(*)')
+        .eq('id', batchId)
+        .single();
+
+      if (error || !batch) {
+        return {
+          isValid: false,
+          type: 'verification',
+          data: { batchId },
+          stage: 'farmer',
+          message: 'Batch not found'
+        };
+      }
+
+      return {
+        isValid: true,
+        type: 'verification',
+        data: { batchId, batch },
+        stage: 'farmer',
+        message: 'Batch verification successful'
+      };
+    } catch (error) {
+      return {
+        isValid: false,
+        type: 'verification',
+        data: { batchId },
+        stage: 'farmer',
+        message: 'Error verifying batch: ' + (error as Error).message
+      };
+    }
+  };
+
+  const verifyIPFSCertificate = async (url: string): Promise<VerificationResult> => {
+    try {
+      const response = await fetch(url, { method: 'HEAD' });
       
-      if (result.success) {
-        toast({
-          title: "Verification Successful",
-          description: `Found group: ${result.groupName}`
-        });
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Verification Failed",
-          description: result.error || "Unknown error occurred"
-        });
+      if (response.ok) {
+        return {
+          isValid: true,
+          type: 'certificate',
+          data: { url },
+          stage: 'farmer',
+          message: 'Certificate is accessible'
+        };
+      }
+
+      return {
+        isValid: false,
+        type: 'certificate',
+        data: { url },
+        stage: 'farmer',
+        message: 'Certificate not accessible'
+      };
+    } catch (error) {
+      return {
+        isValid: false,
+        type: 'certificate',
+        data: { url },
+        stage: 'farmer',
+        message: 'Error accessing certificate: ' + (error as Error).message
+      };
+    }
+  };
+
+  const extractBatchIdFromUrl = (url: string): string | null => {
+    const match = url.match(/batchId=([^&]+)/);
+    return match ? match[1] : null;
+  };
+
+  const fetchBatchDetails = async (batchId: string) => {
+    try {
+      // Fetch batch details
+      const { data: batch, error: batchError } = await supabase
+        .from('batches')
+        .select('*, profiles(*)')
+        .eq('id', batchId)
+        .single();
+
+      if (!batchError && batch) {
+        setBatchDetails(batch);
+      }
+
+      // Fetch transaction history
+      const { data: transactions, error: transError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('batch_id', batchId)
+        .order('created_at', { ascending: true });
+
+      if (!transError && transactions) {
+        setTransactionHistory(transactions);
       }
     } catch (error) {
-      console.error('Group verification error:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to verify group"
-      });
-    } finally {
-      setLoading(false);
+      console.error('Error fetching batch details:', error);
     }
   };
 
-  const handleDownloadCertificate = async (cid: string, fileName: string) => {
-    setDownloading(cid);
-    try {
-      await verificationSystem.downloadCertificate(cid, fileName);
-      toast({
-        title: "Download Started",
-        description: "Certificate download has started"
-      });
-    } catch (error) {
-      console.error('Download error:', error);
-      toast({
-        variant: "destructive",
-        title: "Download Failed",
-        description: "Failed to download certificate"
-      });
-    } finally {
-      setDownloading(null);
+  const getStatusIcon = (isValid: boolean) => {
+    if (isValid) {
+      return <CheckCircle className="h-6 w-6 text-green-500" />;
+    } else {
+      return <XCircle className="h-6 w-6 text-red-500" />;
     }
   };
 
-  const renderBatchInfo = (result: VerificationResult) => {
-    if (!result.batchInfo) return null;
+  const getStatusColor = (isValid: boolean) => {
+    return isValid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+  };
 
-    const { batchInfo } = result;
-    
+  const getStageColor = (stage: string) => {
+    switch (stage) {
+      case 'farmer':
+        return 'bg-green-100 text-green-800';
+      case 'distributor':
+        return 'bg-blue-100 text-blue-800';
+      case 'retailer':
+        return 'bg-purple-100 text-purple-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  if (loading) {
     return (
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Batch Information
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Farmer:</span>
-                <span>{batchInfo.farmerName}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Package className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Crop:</span>
-                <span>{batchInfo.cropType} - {batchInfo.variety}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Hash className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Quantity:</span>
-                <span>{batchInfo.harvestQuantity} kg</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Harvest Date:</span>
-                <span>{new Date(batchInfo.harvestDate).toLocaleDateString()}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Grade:</span>
-                <Badge variant="outline">{batchInfo.grading}</Badge>
-              </div>
-              <div className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">Price:</span>
-                <span>₹{batchInfo.pricePerKg}/kg</span>
-              </div>
-            </div>
+      <Card className={className}>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" />
+            <span>Verifying QR code...</span>
           </div>
         </CardContent>
       </Card>
     );
-  };
+  }
 
-  const renderCertificates = (certificates: CertificateInfo[], title: string) => {
-    if (certificates.length === 0) {
-      return (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              {title}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center py-8">
-              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No certificates found</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Certificates will appear here once they are uploaded to the group
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      );
-    }
-
+  if (!verificationResult) {
     return (
-      <Card>
+      <Card className={className}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            {title} ({certificates.length})
+            <QrCode className="h-5 w-5" />
+            QR Code Verification
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {certificates.map((cert, index) => (
-              <div key={cert.id} className="border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant={cert.type === 'harvest' ? 'default' : 'secondary'}>
-                      {cert.type.toUpperCase()}
-                    </Badge>
-                    <span className="font-medium">{cert.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDownloadCertificate(cert.cid, cert.name)}
-                      disabled={downloading === cert.cid}
-                    >
-                      {downloading === cert.cid ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="h-4 w-4" />
-                      )}
-                      Download
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => window.open(verificationSystem.getCertificateUrl(cert.cid), '_blank')}
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      View
-                    </Button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground">
-                  <div>
-                    <span className="font-medium">CID:</span>
-                    <p className="font-mono text-xs">{cert.cid}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium">Size:</span>
-                    <p>{(cert.size / 1024).toFixed(2)} KB</p>
-                  </div>
-                  <div>
-                    <span className="font-medium">Created:</span>
-                    <p>{new Date(cert.creationDate).toLocaleDateString()}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium">File ID:</span>
-                    <p className="font-mono text-xs">{cert.fileId}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="text-gray-600">No QR code data to verify</p>
         </CardContent>
       </Card>
     );
-  };
+  }
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Supply Chain Verification</h1>
-        <p className="text-muted-foreground">
-          Verify agricultural products using either Batch ID or Group ID to view complete transaction history
-        </p>
-      </div>
+    <Card className={className}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <QrCode className="h-5 w-5" />
+          Verification Result
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Verification Status */}
+        <div className="flex items-center gap-3 p-4 rounded-lg border">
+          {getStatusIcon(verificationResult.isValid)}
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <Badge className={getStatusColor(verificationResult.isValid)}>
+                {verificationResult.isValid ? 'Valid' : 'Invalid'}
+              </Badge>
+              <Badge className={getStageColor(verificationResult.stage)}>
+                {verificationResult.stage}
+              </Badge>
+              <Badge variant="outline">
+                {verificationResult.type}
+              </Badge>
+            </div>
+            <p className="text-sm text-gray-600">{verificationResult.message}</p>
+          </div>
+        </div>
 
-      <Tabs defaultValue="batch" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="batch" className="flex items-center gap-2">
-            <Hash className="h-4 w-4" />
-            Batch ID Verification
-          </TabsTrigger>
-          <TabsTrigger value="group" className="flex items-center gap-2">
-            <QrCode className="h-4 w-4" />
-            Group ID Verification
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="batch" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Verify by Batch ID</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Enter the unique batch ID to view all certificates and transaction history
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <Label htmlFor="batchId">Batch ID</Label>
-                  <Input
-                    id="batchId"
-                    placeholder="Enter batch ID (e.g., e5ff8c16-ceda-40c9-8cd0-2e70bf960609)"
-                    value={batchId}
-                    onChange={(e) => setBatchId(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleBatchVerification()}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button 
-                    onClick={handleBatchVerification} 
-                    disabled={loading}
-                    className="flex items-center gap-2"
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                    Verify
-                  </Button>
-                </div>
+        {/* Batch Details */}
+        {batchDetails && (
+          <div className="space-y-3">
+            <h3 className="font-medium flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Batch Information
+            </h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="font-medium">Crop:</span>
+                <p>{batchDetails.crop_type} - {batchDetails.variety}</p>
               </div>
-            </CardContent>
-          </Card>
-
-          {batchResult && (
-            <>
-              {batchResult.success ? (
-                <>
-                  {renderBatchInfo(batchResult)}
-                  {renderCertificates(batchResult.certificates, "Batch Certificates")}
-                </>
-              ) : (
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="text-center py-8">
-                      <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">Verification Failed</h3>
-                      <p className="text-muted-foreground">{batchResult.error}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          )}
-        </TabsContent>
-
-        <TabsContent value="group" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Verify by Group ID</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Enter the Pinata group ID to directly access all certificates in the group
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <Label htmlFor="groupId">Group ID</Label>
-                  <Input
-                    id="groupId"
-                    placeholder="Enter group ID (e.g., abbf96a2-ea5d-42a2-959e-ddb906e8b33d)"
-                    value={groupId}
-                    onChange={(e) => setGroupId(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleGroupVerification()}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button 
-                    onClick={handleGroupVerification} 
-                    disabled={loading}
-                    className="flex items-center gap-2"
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                    Verify
-                  </Button>
-                </div>
+              <div>
+                <span className="font-medium">Harvest Date:</span>
+                <p>{new Date(batchDetails.harvest_date).toLocaleDateString()}</p>
               </div>
-            </CardContent>
-          </Card>
+              <div>
+                <span className="font-medium">Farmer:</span>
+                <p>{batchDetails.profiles?.full_name || 'Unknown'}</p>
+              </div>
+              <div>
+                <span className="font-medium">Location:</span>
+                <p>{batchDetails.profiles?.farm_location || 'Not specified'}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
-          {groupResult && (
-            <>
-              {groupResult.success ? (
-                <>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <QrCode className="h-5 w-5" />
-                        Group Information
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">Group ID:</span>
-                          <code className="bg-muted px-2 py-1 rounded text-sm">{groupResult.groupId}</code>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">Group Name:</span>
-                          <span>{groupResult.groupName}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  {renderCertificates(groupResult.certificates, "Group Certificates")}
-                </>
-              ) : (
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="text-center py-8">
-                      <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">Verification Failed</h3>
-                      <p className="text-muted-foreground">{groupResult.error}</p>
+        {/* Transaction History */}
+        {transactionHistory.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="font-medium flex items-center gap-2">
+              <Hash className="h-4 w-4" />
+              Transaction History
+            </h3>
+            <div className="space-y-2">
+              {transactionHistory.map((transaction, index) => (
+                <div key={index} className="p-3 border rounded-lg text-sm">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{transaction.transaction_type}</p>
+                      <p className="text-gray-600">
+                        {transaction.quantity} kg - ₹{transaction.price}
+                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-            </>
+                    <Badge variant="outline">
+                      {new Date(transaction.created_at).toLocaleDateString()}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-4 border-t">
+          {verificationResult.data.certificateUrl && (
+            <Button
+              onClick={() => window.open(verificationResult.data.certificateUrl, '_blank')}
+              variant="outline"
+              size="sm"
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              View Certificate
+            </Button>
           )}
-        </TabsContent>
-      </Tabs>
-    </div>
+          
+          {verificationResult.data.verificationUrl && (
+            <Button
+              onClick={() => window.open(verificationResult.data.verificationUrl, '_blank')}
+              variant="outline"
+              size="sm"
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Verify Online
+            </Button>
+          )}
+          
+          {onClose && (
+            <Button onClick={onClose} variant="outline" size="sm" className="ml-auto">
+              Close
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 };

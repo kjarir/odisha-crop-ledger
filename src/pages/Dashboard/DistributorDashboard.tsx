@@ -44,11 +44,26 @@ export const DistributorDashboard = () => {
       
       console.log('🔍 DEBUG: Fetching dashboard data for user:', user?.id);
       
+      // Get the distributor's profile ID first
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (profileError || !profile) {
+        console.error('❌ Profile lookup error:', profileError);
+        setStats({ totalPurchases: 0, totalSales: 0, totalRevenue: 0 });
+        return;
+      }
+
+      console.log('🔍 DEBUG: Found profile ID:', profile.id);
+      
       // Get distributor's purchases from transactions table (simplified query)
       const { data: purchases, error: purchasesError } = await supabase
         .from('transactions')
         .select('*')
-        .eq('buyer_id', user?.id)
+        .eq('buyer_id', profile.id)
         .eq('transaction_type', 'PURCHASE')
         .order('created_at', { ascending: false });
 
@@ -88,7 +103,7 @@ export const DistributorDashboard = () => {
       const { data: sales } = await supabase
         .from('batches')
         .select('*, profiles!batches_current_owner_fkey(*)')
-        .eq('current_owner', user?.id)
+        .eq('current_owner', profile.id)
         .eq('status', 'available');
 
       setStats({

@@ -15,8 +15,9 @@ import {
   generateQRCodeDataURL, 
   generateBatchVerificationQR, 
   generateCertificateQR,
+  generateBatchDataQR,
   downloadQRCode,
-  QRCodeData 
+  BatchQRData
 } from '@/utils/qrCodeUtils';
 
 interface QRCodeDisplayProps {
@@ -27,6 +28,7 @@ interface QRCodeDisplayProps {
   farmerId: string;
   blockchainHash?: string;
   ipfsHash?: string;
+  groupId?: string;
   className?: string;
 }
 
@@ -38,13 +40,14 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
   farmerId,
   blockchainHash,
   ipfsHash,
+  groupId,
   className = ""
 }) => {
   const [qrCodeDataURL, setQrCodeDataURL] = useState<string>('');
   const [verificationQR, setVerificationQR] = useState<string>('');
   const [certificateQR, setCertificateQR] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'batch' | 'verification' | 'certificate'>('certificate');
+  const [activeTab, setActiveTab] = useState<'verification'>('verification');
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
@@ -57,7 +60,7 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
       setLoading(true);
 
       // Generate batch data QR code
-      const batchData: QRCodeData = {
+      const batchData: BatchQRData = {
         batchId,
         cropType,
         variety,
@@ -68,15 +71,14 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
         verificationUrl: `${window.location.origin}/verify?batchId=${batchId}`
       };
 
-      const [batchQR, verificationQRCode, certificateQRCode] = await Promise.all([
-        generateQRCodeDataURL(batchData),
-        generateBatchVerificationQR(batchId),
-        ipfsHash ? generateCertificateQR(ipfsHash) : Promise.resolve('')
-      ]);
+      // Only generate verification QR code with group ID
+      const verificationUrl = groupId 
+        ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
+        : `${window.location.origin}/verify?batchId=${batchId}`;
+      
+      const verificationQRCode = await generateQRCodeDataURL(verificationUrl);
 
-      setQrCodeDataURL(batchQR);
       setVerificationQR(verificationQRCode);
-      setCertificateQR(certificateQRCode);
     } catch (error) {
       console.error('Error generating QR codes:', error);
       toast({
@@ -131,7 +133,9 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
       
       switch (type) {
         case 'verification':
-          url = `${window.location.origin}/verify?batchId=${batchId}`;
+          url = groupId 
+            ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
+            : `${window.location.origin}/verify?batchId=${batchId}`;
           break;
         case 'certificate':
           url = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
@@ -203,90 +207,31 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Tab Navigation */}
-        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-          {ipfsHash && (
-            <button
-              onClick={() => setActiveTab('certificate')}
-              className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                activeTab === 'certificate'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              📄 Certificate
-            </button>
-          )}
-          <button
-            onClick={() => setActiveTab('verification')}
-            className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'verification'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            ✅ Verification
-          </button>
-          <button
-            onClick={() => setActiveTab('batch')}
-            className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'batch'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            📊 Batch Data
-          </button>
-        </div>
 
         {/* QR Code Display */}
         <div className="flex justify-center">
           <div className="relative">
             <img
-              src={getCurrentQRCode()}
-              alt={`QR Code for ${activeTab}`}
+              src={verificationQR}
+              alt="Verification QR Code"
               className="w-48 h-48 border rounded-lg"
             />
-            <div className="absolute top-2 right-2">
-              <Badge variant="secondary" className="text-xs">
-                {activeTab}
-              </Badge>
-            </div>
           </div>
         </div>
 
         {/* QR Code Description */}
         <div className="text-center space-y-2">
-          {activeTab === 'certificate' && (
-            <div>
-              <p className="text-sm font-medium text-green-600">📄 Certificate QR Code</p>
-              <p className="text-xs text-gray-600">
-                <strong>Scan to view PDF certificate directly!</strong> Opens the certificate in your browser.
-              </p>
-            </div>
-          )}
-          {activeTab === 'verification' && (
-            <div>
-              <p className="text-sm font-medium">✅ Verification Link</p>
-              <p className="text-xs text-gray-600">
-                Direct link to verify this batch on AgriTrace platform
-              </p>
-            </div>
-          )}
-          {activeTab === 'batch' && (
-            <div>
-              <p className="text-sm font-medium">📊 Complete Batch Information</p>
-              <p className="text-xs text-gray-600">
-                Contains all batch details including blockchain and IPFS hashes
-              </p>
-            </div>
-          )}
+          <div>
+            <p className="text-xs text-gray-600">
+              <strong>Scan to verify this batch!</strong> Direct link to AgriTrace verification platform.
+            </p>
+          </div>
         </div>
 
         {/* Actions */}
         <div className="flex gap-2">
           <Button
-            onClick={() => handleDownload(activeTab)}
+            onClick={() => handleDownload('verification')}
             variant="outline"
             size="sm"
             className="flex-1"
@@ -295,41 +240,32 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
             Download
           </Button>
           
-          {(activeTab === 'verification' || activeTab === 'certificate') && (
-            <Button
-              onClick={() => handleCopyLink(activeTab)}
-              variant="outline"
-              size="sm"
-              className="flex-1"
-            >
-              {copied ? (
-                <CheckCircle className="h-4 w-4 mr-2" />
-              ) : (
-                <Copy className="h-4 w-4 mr-2" />
-              )}
-              {copied ? 'Copied!' : 'Copy Link'}
-            </Button>
-          )}
+          <Button
+            onClick={() => handleCopyLink('verification')}
+            variant="outline"
+            size="sm"
+            className="flex-1"
+          >
+            {copied ? (
+              <CheckCircle className="h-4 w-4 mr-2" />
+            ) : (
+              <Copy className="h-4 w-4 mr-2" />
+            )}
+            {copied ? 'Copied!' : 'Copy Link'}
+          </Button>
           
-          {activeTab === 'verification' && (
-            <Button
-              onClick={() => window.open(`${window.location.origin}/verify?batchId=${batchId}`, '_blank')}
-              variant="outline"
-              size="sm"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-          )}
-          
-          {activeTab === 'certificate' && ipfsHash && (
-            <Button
-              onClick={() => window.open(`https://gateway.pinata.cloud/ipfs/${ipfsHash}`, '_blank')}
-              variant="outline"
-              size="sm"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-          )}
+          <Button
+            onClick={() => {
+              const verifyUrl = groupId 
+                ? `${window.location.origin}/verify?batchId=${batchId}&groupId=${groupId}`
+                : `${window.location.origin}/verify?batchId=${batchId}`;
+              window.open(verifyUrl, '_blank');
+            }}
+            variant="outline"
+            size="sm"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
         </div>
 
         {/* Batch Info */}
@@ -337,7 +273,7 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
               <span className="font-medium">Batch ID:</span>
-              <p className="font-mono">{batchId.substring(0, 12)}...</p>
+              <p className="font-mono">{String(batchId).substring(0, 12)}...</p>
             </div>
             <div>
               <span className="font-medium">Crop:</span>

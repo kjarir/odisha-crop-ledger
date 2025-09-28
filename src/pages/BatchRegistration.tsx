@@ -102,13 +102,15 @@ export const BatchRegistration = () => {
       
       // Get farmer name from profile
       let farmerName = 'Jarir Khan';
+      let profile = null;
       try {
-        const { data: profile } = await (supabase as any)
+        const { data: profileData } = await (supabase as any)
           .from('profiles')
-          .select('full_name')
+          .select('id, full_name')
           .eq('user_id', user?.id)
           .single();
         
+        profile = profileData;
         if (profile?.full_name) {
           farmerName = profile.full_name;
         }
@@ -292,14 +294,31 @@ export const BatchRegistration = () => {
         }
 
         // Step 5: Save to Supabase for local reference
+        // CACHE BUST: Fixed marketplace_availability references - use marketplace table only
+        // TIMESTAMP: 2025-09-28T18:24:00Z - Force browser to use latest code
         try {
-      const { data: profile } = await (supabase as any)
-        .from('profiles')
-        .select('id')
-        .eq('user_id', user?.id)
-        .single();
+          console.log('🔍 DEBUG: Looking up profile for user:', user?.id);
+          
+          const { data: profile, error: profileError } = await (supabase as any)
+            .from('profiles')
+            .select('id')
+            .eq('user_id', user?.id)
+            .single();
+
+          if (profileError) {
+            console.error('❌ Profile lookup error:', profileError);
+            console.warn('⚠️ Profile lookup failed, skipping database save');
+            return;
+          }
 
           if (profile) {
+            console.log('✅ Profile found:', profile);
+            
+            // Check if profile exists
+            if (!profile || !profile.id) {
+              throw new Error('Profile not found. Please ensure your profile is set up correctly.');
+            }
+            
             // Only insert fields that exist in the current database schema
             const batchData = {
           farmer_id: profile.id,
@@ -331,6 +350,37 @@ export const BatchRegistration = () => {
             }
 
             console.log('Batch inserted successfully:', insertedBatch);
+
+            // Step 6: Add to marketplace table
+            const marketplaceData = {
+              batch_id: insertedBatch.id,
+              current_seller_id: profile.id,
+              current_seller_type: 'farmer',
+              price: parseFloat(formData.harvestQuantity) * parseFloat(formData.pricePerKg),
+              quantity: parseFloat(formData.harvestQuantity),
+              status: 'available'
+            };
+
+            console.log('🔍 DEBUG: Inserting marketplace data:', marketplaceData);
+            console.log('🔍 DEBUG: Profile ID:', profile.id);
+            console.log('🔍 DEBUG: Batch ID:', insertedBatch.id);
+
+            const { data: marketplaceResult, error: marketplaceError } = await (supabase as any)
+              .from('marketplace')
+              .insert(marketplaceData)
+              .select()
+              .single();
+
+            if (marketplaceError) {
+              console.error('❌ Marketplace insertion error:', marketplaceError);
+              console.error('❌ Marketplace data that failed:', marketplaceData);
+              console.error('❌ Profile ID being used:', profile.id);
+              console.error('❌ Batch ID being used:', insertedBatch.id);
+              // Don't throw error, just log it so batch creation still succeeds
+              console.warn('⚠️ Marketplace insertion failed, but batch was created successfully');
+            } else {
+              console.log('✅ Batch added to marketplace successfully:', marketplaceResult);
+            }
           }
         } catch (dbError) {
           console.warn('Failed to save to local database:', dbError);
@@ -339,6 +389,27 @@ export const BatchRegistration = () => {
 
         // Group-based system: Certificate is already created and uploaded to group
         console.log(`Batch registered with Group ID: ${groupId}`);
+
+        // Generate QR code for the batch registration
+        try {
+          const { generateFarmerRegistrationQR } = await import('@/utils/qrCodeGenerator');
+          const qrCodeDataURL = await generateFarmerRegistrationQR({
+            batchId: insertedBatch.id,
+            cropType: formData.cropType,
+            variety: formData.variety,
+            harvestDate: formData.harvestDate,
+            farmerId: profile.id,
+            ipfsHash: groupId // Using group ID as reference
+          });
+          
+          console.log('✅ QR code generated for batch registration');
+          
+          // Store QR code in localStorage for later access
+          localStorage.setItem(`batch_qr_${insertedBatch.id}`, qrCodeDataURL);
+        } catch (qrError) {
+          console.error('❌ QR code generation failed:', qrError);
+          // Continue even if QR code generation fails
+        }
 
         setStep('complete');
       toast({

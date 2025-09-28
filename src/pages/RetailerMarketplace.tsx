@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Package, ShoppingCart, MapPin, Calendar, Award, Eye, Plus, User, History, FileText, Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { UltraSimplePurchaseModal } from '@/components/UltraSimplePurchaseModal';
@@ -66,13 +66,13 @@ export const RetailerMarketplace = () => {
       
       // Get batches that are available in distributor-retailer marketplace
       const { data, error } = await supabase
-        .from('marketplace_availability')
+        .from('marketplace')
         .select(`
           *,
           batches!inner(*)
         `)
-        .eq('marketplace_type', 'distributor_retailer')
-        .eq('is_available', true)
+        .eq('current_seller_type', 'distributor')
+        .eq('status', 'available')
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -158,8 +158,23 @@ export const RetailerMarketplace = () => {
     setLoadingHistory(true);
     
     try {
-      console.log('🔍 DEBUG: Fetching transaction history for batch:', batch.id);
-      const transactions = await transactionManager.getBatchTransactions(batch.id);
+      console.log('🔍 DEBUG: Full batch object:', batch);
+      console.log('🔍 DEBUG: Batch keys:', Object.keys(batch));
+      console.log('🔍 DEBUG: Batch batch_id:', batch.batch_id);
+      console.log('🔍 DEBUG: Batch id:', batch.id);
+      console.log('🔍 DEBUG: Batch batches:', batch.batches);
+      
+      // Try different possible batch ID fields
+      const batchId = batch.batch_id || batch.id || batch.batches?.id;
+      console.log('🔍 DEBUG: Using batch ID:', batchId);
+      
+      if (!batchId) {
+        console.error('❌ No valid batch ID found');
+        setTransactionHistory([]);
+        return;
+      }
+      
+      const transactions = await transactionManager.getBatchTransactions(batchId);
       console.log('🔍 DEBUG: Transaction history:', transactions);
       setTransactionHistory(transactions);
     } catch (error) {
@@ -191,12 +206,12 @@ export const RetailerMarketplace = () => {
             onClick={async () => {
               console.log('🔍 DEBUG: CHECKING RETAILER MARKETPLACE STATE');
               
-              // Check marketplace_availability table
+              // Check marketplace table
               const { data: marketplaceData } = await supabase
-                .from('marketplace_availability')
+                .from('marketplace')
                 .select('*')
-                .eq('marketplace_type', 'distributor_retailer')
-                .eq('is_available', true);
+                .eq('current_seller_type', 'distributor')
+                .eq('status', 'available');
               
               console.log('🔍 Marketplace availability:', marketplaceData);
               
@@ -365,9 +380,9 @@ export const RetailerMarketplace = () => {
                 <DialogTitle className="text-2xl font-bold">
                   {selectedBatch?.crop_type} - {selectedBatch?.variety}
                 </DialogTitle>
-                <p className="text-sm text-muted-foreground mt-1">
+                <DialogDescription>
                   Complete batch information and traceability details
-                </p>
+                </DialogDescription>
               </div>
               <div className="flex items-center gap-2">
                 <Badge className={getCertificationColor(selectedBatch?.certification_level || 'Standard')}>

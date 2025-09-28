@@ -31,22 +31,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
+        console.log('🔍 Auth state change:', event, session?.user?.id);
         setSession(session);
         setUser(session?.user ?? null);
+        
+        // Set loading to false immediately for auth
         setLoading(false);
+        
+        // Fetch profile asynchronously (don't block auth)
+        if (session?.user) {
+          fetchProfile(session.user.id);
+        } else {
+          setProfile(null);
+        }
       }
     );
 
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('🔍 Initial session check:', session?.user?.id);
       setSession(session);
       setUser(session?.user ?? null);
-      setLoading(false);
+      setLoading(false); // Set loading to false immediately
+      
+      // Fetch profile asynchronously if user exists
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setProfile(null);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Separate function to fetch profile without blocking auth
+  const fetchProfile = async (userId: string) => {
+    try {
+      console.log('🔍 Fetching profile for user:', userId);
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      
+      if (error) {
+        console.warn('Profile not found:', error.message);
+        setProfile(null);
+      } else {
+        console.log('✅ Profile loaded:', profileData);
+        setProfile(profileData);
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      setProfile(null);
+    }
+  };
 
   const signOut = async () => {
     await supabase.auth.signOut();

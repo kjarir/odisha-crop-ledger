@@ -36,17 +36,19 @@ export const Marketplace = () => {
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
+  const [farmerCount, setFarmerCount] = useState(0);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   
-  // Get user type from user metadata
+  // Get user type from profile data (preferred) or user metadata (fallback)
+  const userTypeFromProfile = profile?.full_name; // Using full_name as user type indicator
   const userTypeFromMetadata = user?.user_metadata?.user_type;
   
-  // Temporary fixes for users without user_type set
-  let userType = userTypeFromMetadata;
+  // Determine user type with priority: profile > metadata > email fallback
+  let userType = userTypeFromProfile || userTypeFromMetadata;
   
-  if (!userTypeFromMetadata) {
+  if (!userType) {
     // Check email to determine user type
     if (user?.email === 'realjarirkhann@gmail.com') {
       userType = 'distributor';
@@ -66,116 +68,208 @@ export const Marketplace = () => {
     try {
       setLoading(true);
       
-      let query = supabase
-        .from('batches')
+      // Use marketplace table (the main one you want to use)
+      const { data: marketplaceData, error: marketplaceError } = await supabase
+        .from('marketplace')
         .select('*')
-        .eq('status', 'available')
+        .order('created_at', { ascending: false })
         .limit(20);
 
-      // Filter based on user type
-      if (userType === 'farmer') {
-        // Farmers see their own products (for selling)
-        console.log('🔍 DEBUG: Filtering for farmer user ID:', user?.id);
-        query = query.eq('farmer_id', user?.id);
-      } else if (userType === 'distributor') {
-        // SIMPLE FIX: Just get all available batches owned by farmers
-        const { data: allBatches, error: allBatchesError } = await supabase
-          .from('batches')
-          .select('*')
-          .eq('status', 'available')
-          .order('created_at', { ascending: false })
-          .limit(20);
-
-        if (allBatchesError) {
-          console.error('Error fetching batches:', allBatchesError);
-          setBatches([]);
-          return;
-        }
-
-        // Filter for farmer-owned batches (simple check)
-        const farmerBatches = allBatches?.filter(batch => {
-          // Show batches where current_owner is null (default) or equals farmer_id
-          const isFarmerOwned = !batch.current_owner || batch.current_owner === batch.farmer_id;
-          console.log(`🔍 DEBUG: Batch ${batch.id} - current_owner: ${batch.current_owner}, farmer_id: ${batch.farmer_id}, isFarmerOwned: ${isFarmerOwned}`);
-          return isFarmerOwned;
-        }) || [];
-
-        console.log(`Found ${farmerBatches.length} farmer-owned batches for distributor marketplace`);
-        setBatches(farmerBatches);
-        return;
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Database error:', error);
+      if (marketplaceError) {
+        console.error('Marketplace error:', marketplaceError);
         setBatches([]);
         return;
       }
+
+      console.log('🔍 DEBUG: Raw marketplace data from database:', marketplaceData);
+      console.log('🔍 DEBUG: Number of marketplace items found:', marketplaceData?.length || 0);
       
-      console.log(`Found ${data?.length || 0} available batches for ${userType}:`, data);
+      // If no marketplace data, let's check if there are any batches at all
+      if (!marketplaceData || marketplaceData.length === 0) {
+        console.log('🔍 DEBUG: No marketplace data found, checking batches table directly...');
+        const { data: allBatches, error: allBatchesError } = await supabase
+          .from('batches')
+          .select('id, crop_type, variety, harvest_date, farmer_id, current_owner, status')
+          .limit(10);
+        
+        console.log('🔍 DEBUG: All batches in database:', allBatches);
+        console.log('🔍 DEBUG: All batches error:', allBatchesError);
+        
+        // Also check marketplace table structure
+        const { data: marketplaceCheck, error: marketplaceCheckError } = await supabase
+          .from('marketplace')
+          .select('*')
+          .limit(5);
+        
+        console.log('🔍 DEBUG: Marketplace table check:', marketplaceCheck);
+        console.log('🔍 DEBUG: Marketplace table error:', marketplaceCheckError);
+      }
       
-      // Debug: Check all batches in database
-      const { data: allBatches } = await supabase
-        .from('batches')
-        .select('*')
-        .limit(10);
-      console.log('🔍 DEBUG: All batches in database:', allBatches);
-      
-      // Debug: Check batch ownership structure
-      if (allBatches && allBatches.length > 0) {
-        console.log('🔍 DEBUG: Batch ownership analysis:');
-        allBatches.forEach((batch, index) => {
-          console.log(`Batch ${index}:`, {
-            id: batch.id,
-            farmer_id: batch.farmer_id,
-            current_owner: batch.current_owner,
-            isFarmerOwned: batch.current_owner === batch.farmer_id,
-            status: batch.status
+      // Debug each item's status
+      if (marketplaceData && marketplaceData.length > 0) {
+        console.log('🔍 DEBUG: Marketplace items status breakdown:');
+        marketplaceData.forEach((item, index) => {
+          console.log(`Item ${index}:`, {
+            id: item.id,
+            batch_id: item.batch_id,
+            current_seller_type: item.current_seller_type,
+            status: item.status,
+            price: item.price
           });
         });
       }
-      
-      // Apply additional filtering based on user type
-      let filteredData = data || [];
-      
-      if (userType === 'distributor') {
-        // For distributors, show batches where current_owner = farmer_id (still with farmers)
-        // Also exclude batches owned by the distributor themselves
-        // Handle cases where current_owner might be null (default to farmer_id)
-        filteredData = data?.filter(batch => {
-          const currentOwner = batch.current_owner || batch.farmer_id;
-          const isFarmerOwned = currentOwner === batch.farmer_id;
-          const notOwnedByDistributor = currentOwner !== user?.id;
-          
-          console.log(`🔍 DEBUG: Batch ${batch.id} - currentOwner: ${currentOwner}, farmer_id: ${batch.farmer_id}, isFarmerOwned: ${isFarmerOwned}, notOwnedByDistributor: ${notOwnedByDistributor}`);
-          
-          return isFarmerOwned && notOwnedByDistributor;
-        }) || [];
+
+      // Get batches data
+      const batchIds = marketplaceData?.map(item => item.batch_id) || [];
+      console.log('🔍 DEBUG: Batch IDs extracted:', batchIds);
+      const { data: batchesData, error: batchesError } = await supabase
+        .from('batches')
+        .select('id, crop_type, variety, harvest_date, group_id, farmer_id, current_owner, price_per_kg, harvest_quantity')
+        .in('id', batchIds);
+
+      console.log('🔍 DEBUG: Batches data:', batchesData);
+      console.log('🔍 DEBUG: Batches error:', batchesError);
+
+      // Get profiles data for sellers
+      const sellerIds = marketplaceData?.map(item => item.current_seller_id) || [];
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, full_name, farm_location, wallet_address')
+        .in('id', sellerIds);
+
+      // Combine the data
+      const data = marketplaceData?.map(marketplaceItem => {
+        const batch = batchesData?.find(b => b.id === marketplaceItem.batch_id);
+        const profile = profilesData?.find(p => p.id === marketplaceItem.current_seller_id);
         
-        console.log(`Filtered to ${filteredData.length} farmer-owned batches for distributor`);
-        console.log('🔍 DEBUG: Distributor batches after filtering:', filteredData);
+        return {
+          id: marketplaceItem.id,
+          batch_id: marketplaceItem.batch_id,
+          current_seller_id: marketplaceItem.current_seller_id,
+          current_seller_type: marketplaceItem.current_seller_type,
+          price: marketplaceItem.price,
+          quantity: marketplaceItem.quantity,
+          status: marketplaceItem.status,
+          created_at: marketplaceItem.created_at,
+          profiles: profile,
+          batches: batch
+        };
+      }) || [];
+
+      
+      console.log(`Found ${data?.length || 0} available items in marketplace:`, data);
+      
+      // Fetch farmer count - try multiple approaches
+      console.log('🔍 DEBUG: Fetching farmer count...');
+      
+      // Method 1: Count unique farmers from batches (most reliable)
+      const uniqueFarmers = new Set(data?.map(item => item.batches?.farmer_id).filter(Boolean));
+      console.log('🔍 DEBUG: Unique farmers from batches:', uniqueFarmers.size);
+      console.log('🔍 DEBUG: Unique farmer IDs:', Array.from(uniqueFarmers));
+      
+      // Method 2: Count all profiles (to see total users)
+      const { data: allProfiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, email');
+      
+      if (!profilesError && allProfiles) {
+        console.log('🔍 DEBUG: All profiles in database:', allProfiles);
+        console.log('🔍 DEBUG: Total profiles count:', allProfiles.length);
         
-        // If no farmer-owned batches found, show all batches for debugging
-        if (filteredData.length === 0) {
-          console.log('🔍 DEBUG: No farmer-owned batches found, showing all batches for distributor debugging');
-          filteredData = data || [];
-        }
-      } else if (userType === 'farmer' && filteredData.length === 0) {
-        // Temporary fix: if farmer has no batches, show all batches for debugging
-        console.log('🔍 DEBUG: Farmer has no batches, showing all batches for debugging');
-        const { data: allBatchesForFarmer } = await supabase
-          .from('batches')
-          .select('*')
-          .eq('status', 'available')
-          .limit(20);
-        filteredData = allBatchesForFarmer || [];
-        console.log('🔍 DEBUG: All available batches for farmer debugging:', filteredData);
+        // Method 3: Try to identify farmers by email or other patterns
+        const farmersByEmail = allProfiles.filter(profile => 
+          profile.email?.includes('farmer') || 
+          profile.full_name?.toLowerCase().includes('farmer') ||
+          profile.email === 'kjarir23@gmail.com' // Known farmer email
+        );
+        console.log('🔍 DEBUG: Farmers identified by email/name:', farmersByEmail);
+        
+        // Use the most reliable count
+        const finalCount = Math.max(uniqueFarmers.size, farmersByEmail.length);
+        setFarmerCount(finalCount);
+        console.log('🔍 DEBUG: Final farmer count:', finalCount);
+      } else {
+        // Fallback to unique farmers from batches
+        setFarmerCount(uniqueFarmers.size);
+        console.log('🔍 DEBUG: Using fallback farmer count:', uniqueFarmers.size);
       }
       
+      // Filter based on user type
+      let filteredData = data || [];
+      
+      console.log('🔍 DEBUG: User type:', userType);
+      console.log('🔍 DEBUG: User ID:', user?.id);
+      console.log('🔍 DEBUG: Profile data:', profile);
+      console.log('🔍 DEBUG: Profile full_name:', profile?.full_name);
+      console.log('🔍 DEBUG: Profile user_type:', profile?.user_type);
+      console.log('🔍 DEBUG: All marketplace data before filtering:', data);
+      console.log('🔍 DEBUG: Data length before filtering:', data?.length);
+      
+      if (userType === 'farmer') {
+        // Farmers see their own products - need to match with profile ID
+        // First get the farmer's profile ID
+        const { data: farmerProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('user_id', user?.id)
+          .single();
+          
+        if (farmerProfile) {
+          filteredData = data?.filter(item => 
+            item.current_seller_id === farmerProfile.id && 
+            item.status === 'available'
+          ) || [];
+          console.log(`Found ${filteredData.length} farmer batches for farmer:`, filteredData);
+        } else {
+          console.log('No farmer profile found');
+          filteredData = [];
+        }
+      } else if (userType === 'distributor') {
+        // Distributors see products from farmers and retailers (not their own) that are available
+        console.log('🔍 DEBUG: Filtering for distributor - checking items:');
+        data?.forEach((item, index) => {
+          console.log(`Item ${index}:`, {
+            current_seller_type: item.current_seller_type,
+            status: item.status,
+            matches_farmer: item.current_seller_type === 'farmer',
+            matches_retailer: item.current_seller_type === 'retailer',
+            matches_available: item.status === 'available',
+            will_show: (item.current_seller_type === 'farmer' || item.current_seller_type === 'retailer') && item.status === 'available'
+          });
+        });
+        
+        filteredData = data?.filter(item => 
+          (item.current_seller_type === 'farmer' || item.current_seller_type === 'retailer') && 
+          item.status === 'available'
+        ) || [];
+        console.log(`Found ${filteredData.length} batches available for distributor:`, filteredData);
+        
+        // If no items found, show all available items for debugging
+        if (filteredData.length === 0) {
+          console.log('🔍 DEBUG: No farmer/retailer items found, showing all available items for debugging');
+          filteredData = data?.filter(item => item.status === 'available') || [];
+          console.log(`Found ${filteredData.length} total available items:`, filteredData);
+        }
+      } else if (userType === 'retailer') {
+        // Retailers see products from distributors and farmers that are available
+        filteredData = data?.filter(item => 
+          (item.current_seller_type === 'distributor' || item.current_seller_type === 'farmer') && 
+          item.status === 'available'
+        ) || [];
+        console.log(`Found ${filteredData.length} batches available for retailer:`, filteredData);
+      }
+      
+      // Final fallback: if no items found with specific filtering, show all available items
+      if (filteredData.length === 0 && data && data.length > 0) {
+        console.log('🔍 DEBUG: No items found with specific filtering, showing all available items as fallback');
+        filteredData = data.filter(item => item.status === 'available');
+        console.log(`🔍 DEBUG: Fallback - showing ${filteredData.length} available items:`, filteredData);
+      }
+      
+      console.log('🔍 DEBUG: Final filtered data being set:', filteredData);
       setBatches(filteredData);
     } catch (error) {
-      console.error('Error fetching batches:', error);
+      console.error('Error fetching marketplace items:', error);
       setBatches([]);
     } finally {
       setLoading(false);
@@ -271,27 +365,6 @@ export const Marketplace = () => {
             'Browse verified agricultural produce from farmers across Odisha. Every batch comes with complete provenance and quality guarantees.' :
             'Browse verified agricultural produce from farmers across Odisha. Every batch comes with complete provenance and quality guarantees.'}
         </p>
-        
-        {/* EMERGENCY DEBUG BUTTON */}
-        <Button 
-          onClick={async () => {
-            console.log('🔍 EMERGENCY DEBUG: Checking database state');
-            
-            // Get all batches
-            const { data: allBatches } = await supabase
-              .from('batches')
-              .select('*')
-              .order('created_at', { ascending: false });
-            
-            console.log('🔍 All batches in database:', allBatches);
-            
-            // Force refresh
-            fetchBatches();
-          }}
-          className="bg-red-600 hover:bg-red-700 text-white"
-        >
-          🔍 EMERGENCY DEBUG - Check Database
-        </Button>
       </div>
 
       {/* Search & Filters */}
@@ -346,7 +419,7 @@ export const Marketplace = () => {
       </Card>
 
       {/* Stats Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="govt-card">
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-primary">{batches.length}</div>
@@ -355,14 +428,8 @@ export const Marketplace = () => {
         </Card>
         <Card className="govt-card">
           <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-secondary">247</div>
+            <div className="text-2xl font-bold text-primary">{farmerCount}</div>
             <div className="text-sm text-muted-foreground">Active Farmers</div>
-          </CardContent>
-        </Card>
-        <Card className="govt-card">
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-accent">94%</div>
-            <div className="text-sm text-muted-foreground">Avg Quality</div>
           </CardContent>
         </Card>
         <Card className="govt-card">
@@ -391,8 +458,8 @@ export const Marketplace = () => {
                         <Leaf className="h-5 w-5 text-primary-foreground" />
                       </div>
                       <div>
-                        <CardTitle className="text-lg">{batch.crop_type}</CardTitle>
-                        <CardDescription>{batch.variety}</CardDescription>
+                        <CardTitle className="text-lg">{batch.batches?.crop_type || 'Unknown Crop'}</CardTitle>
+                        <CardDescription>{batch.batches?.variety || 'Unknown Variety'}</CardDescription>
                       </div>
                     </div>
                     <Badge className={getCertificationColor(batch.certification || 'Standard')}>
@@ -402,11 +469,14 @@ export const Marketplace = () => {
                 </CardHeader>
 
                 <CardContent className="space-y-4">
-                  {/* Farmer & Location */}
+                  {/* Seller & Location */}
                   <div className="space-y-2">
                     <div className="flex items-center text-sm">
                       <Package className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <span>{batch.profiles?.full_name || 'Jarir Khan'}</span>
+                      <span>{batch.profiles?.full_name || 'Unknown Seller'}</span>
+                      <Badge variant="outline" className="ml-2 text-xs">
+                        {batch.current_seller_type}
+                      </Badge>
                     </div>
                     <div className="flex items-center text-sm">
                       <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
@@ -414,31 +484,29 @@ export const Marketplace = () => {
                     </div>
                     <div className="flex items-center text-sm">
                       <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <span>Harvested: {new Date(batch.harvest_date).toLocaleDateString()}</span>
+                      <span>Harvested: {new Date(batch.batches?.harvest_date || batch.created_at).toLocaleDateString()}</span>
                     </div>
                   </div>
 
-                  {/* Quality Score */}
+                  {/* Total Amount */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <Award className="h-4 w-4 text-success" />
-                      <span className="text-sm font-medium">Quality Score</span>
+                      <Package className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">Total Amount</span>
                     </div>
-                    <div className="text-lg font-bold text-success">{batch.quality_score || 0}/100</div>
+                    <div className="text-lg font-bold text-primary">₹{batch.price.toLocaleString()}</div>
                   </div>
 
                   {/* Price & Quantity */}
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-2xl font-bold text-primary">₹{batch.price_per_kg}</div>
+                      <div className="text-2xl font-bold text-primary">₹{Math.round(batch.price / batch.quantity)}</div>
                       <div className="text-sm text-muted-foreground">per kg</div>
                     </div>
                     <div className="text-right">
-                      <BatchQuantityDisplay 
-                        batchId={batch.id} 
-                        originalQuantity={batch.harvest_quantity}
-                        className="mb-2"
-                      />
+                      <div className="text-lg font-semibold mb-2">
+                        {batch.quantity} kg available
+                      </div>
                       <Badge className={getStatusColor(batch.status)}>
                         {batch.status}
                       </Badge>
@@ -497,7 +565,7 @@ export const Marketplace = () => {
                   <div className="text-xs text-muted-foreground font-mono">
                     ID: {(batch.blockchain_id || batch.blockchain_batch_id) ? 
                       `${batch.blockchain_id || batch.blockchain_batch_id}` : 
-                      batch.id.substring(0, 8) + '...'
+                      String(batch.id).substring(0, 8) + '...'
                     }
                   </div>
                 </CardContent>

@@ -73,6 +73,24 @@ export class BlockchainTransactionManager {
 
       const receipt = await tx.wait();
       console.log('🔍 DEBUG: Harvest transaction receipt:', receipt);
+      
+      // Get block details for verification
+      const block = await this.provider.getBlock(receipt.blockNumber);
+      console.log('🔍 DEBUG: Block details for verification:', {
+        blockNumber: receipt.blockNumber,
+        blockHash: block?.hash,
+        timestamp: block?.timestamp,
+        gasUsed: receipt.gasUsed.toString(),
+        gasPrice: receipt.gasPrice?.toString(),
+        transactionHash: receipt.hash
+      });
+      
+      // Log verification info for Sepolia Explorer
+      console.log('🔍 VERIFICATION INFO - Sepolia Explorer:');
+      console.log(`Transaction Hash: ${receipt.hash}`);
+      console.log(`Block Number: ${receipt.blockNumber}`);
+      console.log(`Block Hash: ${block?.hash}`);
+      console.log(`Explorer URL: https://sepolia.etherscan.io/tx/${receipt.hash}`);
 
       return {
         batchId,
@@ -117,16 +135,39 @@ export class BlockchainTransactionManager {
     });
 
     try {
-      const tx = await this.contract.recordPurchase(
-        batchId,
-        fromAddress,
-        toAddress,
-        quantity,
-        price
+      // Convert UUID to a numeric ID for blockchain (use timestamp or hash)
+      const numericBatchId = Date.now(); // Use timestamp as numeric ID
+      
+      console.log('🔍 DEBUG: Converting batchId for blockchain:', {
+        originalBatchId: batchId,
+        numericBatchId: numericBatchId
+      });
+      
+      const tx = await this.contract.transferBatch(
+        numericBatchId,
+        toAddress
       );
 
       const receipt = await tx.wait();
       console.log('🔍 DEBUG: Purchase transaction receipt:', receipt);
+      
+      // Get block details for verification
+      const block = await this.provider.getBlock(receipt.blockNumber);
+      console.log('🔍 DEBUG: Block details for verification:', {
+        blockNumber: receipt.blockNumber,
+        blockHash: block?.hash,
+        timestamp: block?.timestamp,
+        gasUsed: receipt.gasUsed.toString(),
+        gasPrice: receipt.gasPrice?.toString(),
+        transactionHash: receipt.hash
+      });
+      
+      // Log verification info for Sepolia Explorer
+      console.log('🔍 VERIFICATION INFO - Sepolia Explorer:');
+      console.log(`Transaction Hash: ${receipt.hash}`);
+      console.log(`Block Number: ${receipt.blockNumber}`);
+      console.log(`Block Hash: ${block?.hash}`);
+      console.log(`Explorer URL: https://sepolia.etherscan.io/tx/${receipt.hash}`);
 
       return {
         batchId,
@@ -253,7 +294,10 @@ export class BlockchainTransactionManager {
   }
 }
 
-// Export singleton instance
-export const blockchainTransactionManager = new BlockchainTransactionManager(
-  new ethers.JsonRpcProvider('https://rpc.megaeth.org')
-);
+// Export singleton instance - will be initialized with MetaMask provider
+export let blockchainTransactionManager: BlockchainTransactionManager;
+
+// Initialize with MetaMask provider when available
+export const initializeBlockchainManager = (provider: ethers.Provider, signer?: ethers.Signer) => {
+  blockchainTransactionManager = new BlockchainTransactionManager(provider, signer);
+};

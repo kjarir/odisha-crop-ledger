@@ -1,52 +1,150 @@
 /**
- * QR Code Utilities
+ * Comprehensive QR Code Utilities for AgriTrace
+ * Handles QR code generation for the entire farmer-distributor-retailer flow
  */
+
+import QRCode from 'qrcode';
 
 export interface QRCodeData {
-  type: 'batch' | 'certificate' | 'transaction';
+  type: 'batch' | 'certificate' | 'transaction' | 'verification';
   id: string;
-  ipfsHash: string;
+  batchId?: string;
+  ipfsHash?: string;
+  blockchainHash?: string;
   timestamp: string;
   metadata?: any;
+  verificationUrl?: string;
+  certificateUrl?: string;
+}
+
+export interface BatchQRData {
+  batchId: string;
+  cropType: string;
+  variety: string;
+  harvestDate: string;
+  farmerId: string;
+  blockchainHash?: string;
+  ipfsHash?: string;
+  verificationUrl?: string;
+}
+
+export interface CertificateQRData {
+  certificateId: string;
+  batchId: string;
+  ipfsHash: string;
+  certificateUrl: string;
+  timestamp: string;
+}
+
+export interface TransactionQRData {
+  transactionId: string;
+  batchId: string;
+  from: string;
+  to: string;
+  quantity: number;
+  price: number;
+  timestamp: string;
+  blockchainHash?: string;
 }
 
 /**
- * Generate QR code data for a batch
+ * Generate QR code data URL for display
  */
-export function generateBatchQRData(batchId: string, ipfsHash: string, metadata?: any): QRCodeData {
-  return {
+export async function generateQRCodeDataURL(data: string | object, size: number = 200): Promise<string> {
+  try {
+    const dataString = typeof data === 'string' ? data : JSON.stringify(data);
+    const qrCodeDataURL = await QRCode.toDataURL(dataString, {
+      width: size,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+    return qrCodeDataURL;
+  } catch (error) {
+    console.error('Error generating QR code:', error);
+    throw new Error('Failed to generate QR code');
+  }
+}
+
+/**
+ * Generate batch verification QR code
+ */
+export async function generateBatchVerificationQR(batchId: string): Promise<string> {
+  const verificationUrl = `${window.location.origin}/verify?batchId=${batchId}`;
+  return await generateQRCodeDataURL(verificationUrl);
+}
+
+/**
+ * Generate certificate QR code
+ */
+export async function generateCertificateQR(ipfsHash: string): Promise<string> {
+  const certificateUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+  return await generateQRCodeDataURL(certificateUrl);
+}
+
+/**
+ * Generate comprehensive batch data QR code
+ */
+export async function generateBatchDataQR(batchData: BatchQRData): Promise<string> {
+  const qrData = {
     type: 'batch',
-    id: batchId,
-    ipfsHash,
-    timestamp: new Date().toISOString(),
-    metadata
+    batchId: batchData.batchId,
+    cropType: batchData.cropType,
+    variety: batchData.variety,
+    harvestDate: batchData.harvestDate,
+    farmerId: batchData.farmerId,
+    blockchainHash: batchData.blockchainHash,
+    ipfsHash: batchData.ipfsHash,
+    verificationUrl: batchData.verificationUrl || `${window.location.origin}/verify?batchId=${batchData.batchId}`,
+    timestamp: new Date().toISOString()
   };
+  
+  return await generateQRCodeDataURL(qrData);
 }
 
 /**
- * Generate QR code data for a certificate
+ * Generate transaction QR code
  */
-export function generateCertificateQRData(certificateId: string, ipfsHash: string, metadata?: any): QRCodeData {
-  return {
-    type: 'certificate',
-    id: certificateId,
-    ipfsHash,
-    timestamp: new Date().toISOString(),
-    metadata
-  };
-}
-
-/**
- * Generate QR code data for a transaction
- */
-export function generateTransactionQRData(transactionId: string, ipfsHash: string, metadata?: any): QRCodeData {
-  return {
+export async function generateTransactionQR(transactionData: TransactionQRData): Promise<string> {
+  const qrData = {
     type: 'transaction',
-    id: transactionId,
-    ipfsHash,
-    timestamp: new Date().toISOString(),
-    metadata
+    ...transactionData,
+    timestamp: new Date().toISOString()
   };
+  
+  return await generateQRCodeDataURL(qrData);
+}
+
+/**
+ * Generate certificate QR code with metadata
+ */
+export async function generateCertificateQRWithMetadata(certificateData: CertificateQRData): Promise<string> {
+  const qrData = {
+    type: 'certificate',
+    ...certificateData,
+    timestamp: new Date().toISOString()
+  };
+  
+  return await generateQRCodeDataURL(qrData);
+}
+
+/**
+ * Download QR code as image
+ */
+export function downloadQRCode(dataURL: string, filename: string): void {
+  try {
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (error) {
+    console.error('Error downloading QR code:', error);
+    throw new Error('Failed to download QR code');
+  }
 }
 
 /**
@@ -57,12 +155,12 @@ export function parseQRCodeData(qrString: string): QRCodeData | null {
     const data = JSON.parse(qrString);
     
     // Validate required fields
-    if (!data.type || !data.id || !data.ipfsHash || !data.timestamp) {
+    if (!data.type || !data.id || !data.timestamp) {
       return null;
     }
     
     // Validate type
-    if (!['batch', 'certificate', 'transaction'].includes(data.type)) {
+    if (!['batch', 'certificate', 'transaction', 'verification'].includes(data.type)) {
       return null;
     }
     
@@ -74,79 +172,136 @@ export function parseQRCodeData(qrString: string): QRCodeData | null {
 }
 
 /**
- * Generate QR code URL for viewing
+ * Generate QR code for farmer batch registration
  */
-export function generateQRCodeUrl(qrData: QRCodeData): string {
-  return `https://gateway.pinata.cloud/ipfs/${qrData.ipfsHash}`;
-}
-
-/**
- * Generate verification URL
- */
-export function generateVerificationUrl(qrData: QRCodeData): string {
-  const baseUrl = window.location.origin;
-  return `${baseUrl}/verify?type=${qrData.type}&id=${qrData.id}&hash=${qrData.ipfsHash}`;
-}
-
-/**
- * Generate QR code data URL for display
- */
-export function generateQRCodeDataURL(data: string, size: number = 200): string {
-  // This is a placeholder - in a real implementation, you'd use a QR code library
-  // For now, we'll return a data URL that represents the QR code
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
+export async function generateFarmerBatchQR(batchData: {
+  batchId: string;
+  cropType: string;
+  variety: string;
+  harvestDate: string;
+  farmerId: string;
+  ipfsHash?: string;
+}): Promise<string> {
+  const qrData = {
+    type: 'batch',
+    id: batchData.batchId,
+    batchId: batchData.batchId,
+    cropType: batchData.cropType,
+    variety: batchData.variety,
+    harvestDate: batchData.harvestDate,
+    farmerId: batchData.farmerId,
+    ipfsHash: batchData.ipfsHash,
+    verificationUrl: `${window.location.origin}/verify?batchId=${batchData.batchId}`,
+    timestamp: new Date().toISOString(),
+    metadata: {
+      stage: 'farmer_registration',
+      description: 'Farmer batch registration certificate'
+    }
+  };
   
-  if (ctx) {
-    // Simple placeholder QR code representation
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(10, 10, size - 20, size - 20);
-    ctx.fillStyle = '#000000';
-    ctx.font = '12px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('QR Code', size / 2, size / 2);
-    ctx.fillText(String(data).substring(0, 20), size / 2, size / 2 + 20);
-  }
+  return await generateQRCodeDataURL(qrData);
+}
+
+/**
+ * Generate QR code for distributor purchase
+ */
+export async function generateDistributorPurchaseQR(transactionData: {
+  transactionId: string;
+  batchId: string;
+  from: string;
+  to: string;
+  quantity: number;
+  price: number;
+  ipfsHash?: string;
+}): Promise<string> {
+  const qrData = {
+    type: 'transaction',
+    id: transactionData.transactionId,
+    batchId: transactionData.batchId,
+    from: transactionData.from,
+    to: transactionData.to,
+    quantity: transactionData.quantity,
+    price: transactionData.price,
+    ipfsHash: transactionData.ipfsHash,
+    verificationUrl: `${window.location.origin}/verify?transactionId=${transactionData.transactionId}`,
+    timestamp: new Date().toISOString(),
+    metadata: {
+      stage: 'distributor_purchase',
+      description: 'Distributor purchase transaction certificate'
+    }
+  };
   
-  return canvas.toDataURL();
+  return await generateQRCodeDataURL(qrData);
 }
 
 /**
- * Generate batch verification QR code
+ * Generate QR code for retailer purchase
  */
-export function generateBatchVerificationQR(batchId: string, ipfsHash: string): QRCodeData {
-  return generateBatchQRData(batchId, ipfsHash, {
-    verificationUrl: generateVerificationUrl(generateBatchQRData(batchId, ipfsHash))
-  });
+export async function generateRetailerPurchaseQR(transactionData: {
+  transactionId: string;
+  batchId: string;
+  from: string;
+  to: string;
+  quantity: number;
+  price: number;
+  ipfsHash?: string;
+}): Promise<string> {
+  const qrData = {
+    type: 'transaction',
+    id: transactionData.transactionId,
+    batchId: transactionData.batchId,
+    from: transactionData.from,
+    to: transactionData.to,
+    quantity: transactionData.quantity,
+    price: transactionData.price,
+    ipfsHash: transactionData.ipfsHash,
+    verificationUrl: `${window.location.origin}/verify?transactionId=${transactionData.transactionId}`,
+    timestamp: new Date().toISOString(),
+    metadata: {
+      stage: 'retailer_purchase',
+      description: 'Retailer purchase transaction certificate'
+    }
+  };
+  
+  return await generateQRCodeDataURL(qrData);
 }
 
 /**
- * Generate certificate QR code
+ * Generate QR code for supply chain verification
  */
-export function generateCertificateQR(certificateId: string, ipfsHash: string): QRCodeData {
-  return generateCertificateQRData(certificateId, ipfsHash, {
-    verificationUrl: generateVerificationUrl(generateCertificateQRData(certificateId, ipfsHash))
-  });
+export async function generateSupplyChainQR(batchId: string, stage: 'farmer' | 'distributor' | 'retailer'): Promise<string> {
+  const qrData = {
+    type: 'verification',
+    id: batchId,
+    batchId: batchId,
+    verificationUrl: `${window.location.origin}/verify?batchId=${batchId}&stage=${stage}`,
+    timestamp: new Date().toISOString(),
+    metadata: {
+      stage: stage,
+      description: `Supply chain verification for ${stage} stage`
+    }
+  };
+  
+  return await generateQRCodeDataURL(qrData);
 }
 
 /**
- * Download QR code as image
+ * Generate QR code for certificate viewing
  */
-export function downloadQRCode(qrData: QRCodeData, filename?: string): void {
-  try {
-    const dataUrl = generateQRCodeDataURL(JSON.stringify(qrData));
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = filename || `qr_code_${qrData.type}_${qrData.id}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  } catch (error) {
-    console.error('Error downloading QR code:', error);
-    throw new Error('Failed to download QR code');
-  }
+export async function generateCertificateViewQR(ipfsHash: string, certificateType: 'harvest' | 'purchase' | 'transfer'): Promise<string> {
+  const certificateUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+  const qrData = {
+    type: 'certificate',
+    id: ipfsHash,
+    ipfsHash: ipfsHash,
+    certificateUrl: certificateUrl,
+    verificationUrl: `${window.location.origin}/verify?certificate=${ipfsHash}`,
+    timestamp: new Date().toISOString(),
+    metadata: {
+      certificateType: certificateType,
+      description: `${certificateType} certificate`
+    }
+  };
+  
+  return await generateQRCodeDataURL(qrData);
 }
